@@ -1,0 +1,92 @@
+Passo a passo para empacotar e importar a função Lambda via console AWS
+=====================================================================
+
+Pré-requisitos
+--------------
+- Node.js 20.x instalado localmente.
+- AWS CLI opcionalmente configurada para testar o pacote antes do upload.
+- Pasta do projeto com este repositório clonado.
+
+1. Instale as dependências de produção
+--------------------------------------
+Execute na raiz do projeto:
+
+```
+npm install --omit=dev
+```
+
+Isso garante que apenas dependências necessárias para execução sejam incluídas no pacote.
+
+2. Limpe arquivos desnecessários (opcional, mas recomendado)
+-----------------------------------------------------------
+Remova diretórios temporários e artefatos locais, caso existam:
+
+```
+rm -rf node_modules/.cache
+rm -rf coverage .nyc_output
+```
+
+3. Gere o arquivo ZIP
+---------------------
+A partir da raiz do projeto, compacte todo o conteúdo relevante (código-fonte, `node_modules`, `package.json`, `package-lock.json`):
+
+```
+zip -r lambda-api.zip src package.json package-lock.json node_modules README.md
+```
+
+> Ajuste o nome do arquivo se preferir outro identificador para a versão/ambiente.
+
+4. Valide o ZIP localmente (opcional)
+------------------------------------
+Garanta que o ZIP contenha `src/handler.js` e os demais arquivos necessários. Você pode listar o conteúdo com:
+
+```
+unzip -l lambda-api.zip
+```
+
+5. Acesse o console da AWS Lambda
+---------------------------------
+- Entre em https://console.aws.amazon.com/lambda.
+- Escolha a região em que a função será criada/atualizada.
+- Crie uma nova função ("Author from scratch") ou abra a função existente que receberá o deploy.
+
+6. Configure a função (apenas na criação)
+----------------------------------------
+- Runtime: **Node.js 20.x**.
+- Função de execução: mantenha a função padrão ou selecione um role com acesso ao DynamoDB.
+- Nomeie a função de acordo com o ambiente (por exemplo, `lambda-api-next-prod`).
+
+7. Faça o upload do ZIP
+-----------------------
+Na tela da função:
+- Clique em **Upload from** > **.zip file**.
+- Selecione `lambda-api.zip` e confirme o upload.
+- Aguarde a publicação do pacote.
+
+8. Ajuste o handler
+-------------------
+Em "Runtime settings", defina:
+- Handler: `src/handler.lambdaHandler`
+
+9. Configure variáveis de ambiente
+---------------------------------
+Ainda na função:
+- Acesse "Configuration" > "Environment variables".
+- Adicione `TABLE_NAME` com o nome da tabela DynamoDB.
+- Adicione `AWS_REGION` se necessário (o padrão é `us-east-1`).
+
+10. Conceda permissões DynamoDB
+-------------------------------
+Certifique-se de que o role associado à função possua política permitindo `dynamodb:*` (ou o mínimo necessário) para a tabela informada.
+
+11. Teste a função
+------------------
+- Crie um evento de teste simulando um request HTTP (veja exemplos no README).
+- Valide logs no CloudWatch para garantir que a função inicializou corretamente.
+
+12. Atualize o alias/versão (opcional)
+-------------------------------------
+- Publique uma nova versão após os testes.
+- Atualize alias (ex.: `prod`, `staging`) para apontar para a versão publicada.
+
+Com isso, o projeto estará empacotado e importado na AWS Lambda via console.
