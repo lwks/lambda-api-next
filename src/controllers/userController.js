@@ -7,7 +7,7 @@ const userService = createEntityService('user');
 
 async function createUser(req, res, next) {
   try {
-    validateRequiredFields(req.body, ['username', 'role']);
+    validateRequiredFields(req.body, ['username', 'role', 'cd_cpf']);
     const user = await userService.create(req.body);
     return created(res, user);
   } catch (error) {

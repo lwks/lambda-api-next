@@ -7,7 +7,7 @@ const companyService = createEntityService('company');
 
 async function createCompany(req, res, next) {
   try {
-    validateRequiredFields(req.body, ['name']);
+    validateRequiredFields(req.body, ['name', 'cd_cnpj']);
     const company = await companyService.create(req.body);
     return created(res, company);
   } catch (error) {
