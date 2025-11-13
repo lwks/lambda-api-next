@@ -8,6 +8,7 @@ const {
 } = require('@aws-sdk/lib-dynamodb');
 const { documentClient } = require('../aws_services/dynamoClient');
 const { NotFoundError } = require('../utils/errors');
+const { logger } = require('../utils/logger');
 
 function resolveTableName(entityType, providedTableName) {
   return (
@@ -75,24 +76,29 @@ function createEntityService(entityType, providedTableName) {
 
   async function create(payload) {
     const item = buildItem(entityType, payload);
+    logger.info('Persisting entity in DynamoDB', { entityType, tableName, item });
     await documentClient.send(new PutCommand({
       TableName: tableName,
       Item: item,
     }));
+    logger.info('Entity persisted successfully', { entityType, id: item.id });
     return item;
   }
 
   async function findById(id) {
     const { pk, sk } = buildKeys(entityType, id);
+    logger.info('Fetching entity from DynamoDB', { entityType, tableName, id });
     const response = await documentClient.send(new GetCommand({
       TableName: tableName,
       Key: { pk, sk },
     }));
 
     if (!response.Item) {
+      logger.warn('Entity not found during fetch', { entityType, id });
       throw new NotFoundError(`${entityType} with id ${id} not found`);
     }
 
+    logger.info('Entity fetched successfully', { entityType, id });
     return response.Item;
   }
 
@@ -101,10 +107,12 @@ function createEntityService(entityType, providedTableName) {
     const updateExpression = buildUpdateExpression(updates);
 
     if (!updateExpression) {
+      logger.warn('No valid updates provided', { entityType, id, updates });
       return findById(id);
     }
 
     try {
+      logger.info('Updating entity in DynamoDB', { entityType, tableName, id, updates });
       const response = await documentClient.send(new UpdateCommand({
         TableName: tableName,
         Key: { pk, sk },
@@ -113,11 +121,19 @@ function createEntityService(entityType, providedTableName) {
         ReturnValues: 'ALL_NEW',
       }));
 
+      logger.info('Entity updated successfully', { entityType, id });
       return response.Attributes;
     } catch (error) {
       if (error.name === 'ConditionalCheckFailedException') {
+        logger.warn('Entity not found during update', { entityType, id });
         throw new NotFoundError(`${entityType} with id ${id} not found`);
       }
+      logger.error('Failed to update entity in DynamoDB', {
+        entityType,
+        id,
+        error: error.message,
+        stack: error.stack,
+      });
       throw error;
     }
   }
@@ -125,16 +141,25 @@ function createEntityService(entityType, providedTableName) {
   async function remove(id) {
     const { pk, sk } = buildKeys(entityType, id);
     try {
+      logger.info('Removing entity from DynamoDB', { entityType, tableName, id });
       await documentClient.send(new DeleteCommand({
         TableName: tableName,
         Key: { pk, sk },
         ConditionExpression: 'attribute_exists(pk)',
       }));
+      logger.info('Entity removed successfully', { entityType, id });
       return true;
     } catch (error) {
       if (error.name === 'ConditionalCheckFailedException') {
+        logger.warn('Entity not found during removal', { entityType, id });
         throw new NotFoundError(`${entityType} with id ${id} not found`);
       }
+      logger.error('Failed to remove entity from DynamoDB', {
+        entityType,
+        id,
+        error: error.message,
+        stack: error.stack,
+      });
       throw error;
     }
   }
@@ -156,7 +181,18 @@ function createEntityService(entityType, providedTableName) {
       params.ExclusiveStartKey = lastKey;
     }
 
+    logger.info('Scanning entities from DynamoDB', {
+      entityType,
+      tableName,
+      limit,
+      hasLastKey: Boolean(lastKey),
+    });
     const response = await documentClient.send(new ScanCommand(params));
+    logger.info('Entity scan completed', {
+      entityType,
+      itemCount: response.Items ? response.Items.length : 0,
+      hasMore: Boolean(response.LastEvaluatedKey),
+    });
 
     return {
       items: response.Items || [],
