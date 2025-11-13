@@ -1,9 +1,10 @@
 const { createEntityService } = require('../services/entityServiceFactory');
+const { TABLE_NAMES } = require('../config/tableNames');
 const { validateRequiredFields } = require('../utils/validators');
 const { success, created, noContent } = require('../utils/response');
 const { decodeLastKey, encodeLastKey } = require('../utils/pagination');
 
-const userService = createEntityService('user');
+const userService = createEntityService('user', TABLE_NAMES.user);
 
 async function createUser(req, res, next) {
   try {
