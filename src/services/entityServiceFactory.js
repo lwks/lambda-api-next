@@ -9,18 +9,21 @@ const {
 const { documentClient } = require('../aws_services/dynamoClient');
 const { NotFoundError } = require('../utils/errors');
 
-const TABLE_NAME = process.env.TABLE_NAME;
-
-if (!TABLE_NAME) {
-  // eslint-disable-next-line no-console
-  console.warn('TABLE_NAME environment variable is not set. DynamoDB commands will fail until it is configured.');
+function resolveTableName(entityType, providedTableName) {
+  return (
+    providedTableName ||
+    process.env[`${entityType.toUpperCase()}_TABLE_NAME`] ||
+    process.env.TABLE_NAME
+  );
 }
 
-function ensureTableName() {
-  if (!TABLE_NAME) {
-    throw new Error('TABLE_NAME environment variable must be defined.');
+function ensureTableName(entityType, tableName) {
+  if (!tableName) {
+    throw new Error(
+      `Table name for entity "${entityType}" must be defined. Set ${entityType.toUpperCase()}_TABLE_NAME or TABLE_NAME.`,
+    );
   }
-  return TABLE_NAME;
+  return tableName;
 }
 
 function buildKeys(entityType, id) {
@@ -67,11 +70,13 @@ function buildUpdateExpression(updates) {
   };
 }
 
-function createEntityService(entityType) {
+function createEntityService(entityType, providedTableName) {
+  const tableName = ensureTableName(entityType, resolveTableName(entityType, providedTableName));
+
   async function create(payload) {
     const item = buildItem(entityType, payload);
     await documentClient.send(new PutCommand({
-      TableName: ensureTableName(),
+      TableName: tableName,
       Item: item,
     }));
     return item;
@@ -80,7 +85,7 @@ function createEntityService(entityType) {
   async function findById(id) {
     const { pk, sk } = buildKeys(entityType, id);
     const response = await documentClient.send(new GetCommand({
-      TableName: ensureTableName(),
+      TableName: tableName,
       Key: { pk, sk },
     }));
 
@@ -101,7 +106,7 @@ function createEntityService(entityType) {
 
     try {
       const response = await documentClient.send(new UpdateCommand({
-        TableName: ensureTableName(),
+        TableName: tableName,
         Key: { pk, sk },
         ...updateExpression,
         ConditionExpression: 'attribute_exists(pk)',
@@ -121,7 +126,7 @@ function createEntityService(entityType) {
     const { pk, sk } = buildKeys(entityType, id);
     try {
       await documentClient.send(new DeleteCommand({
-        TableName: ensureTableName(),
+        TableName: tableName,
         Key: { pk, sk },
         ConditionExpression: 'attribute_exists(pk)',
       }));
@@ -136,7 +141,7 @@ function createEntityService(entityType) {
 
   async function list({ limit = 20, lastKey } = {}) {
     const params = {
-      TableName: ensureTableName(),
+      TableName: tableName,
       Limit: limit,
       FilterExpression: '#entityType = :entityType',
       ExpressionAttributeNames: {

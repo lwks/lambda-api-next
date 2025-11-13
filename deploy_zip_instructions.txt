@@ -72,7 +72,7 @@ Em "Runtime settings", defina:
 ---------------------------------
 Ainda na função:
 - Acesse "Configuration" > "Environment variables".
-- Adicione `TABLE_NAME` com o nome da tabela DynamoDB.
+- Adicione `CANDIDATE_TABLE_NAME`, `COMPANY_TABLE_NAME`, `USER_TABLE_NAME` e `JOB_TABLE_NAME` com os nomes das respectivas tabelas DynamoDB (ou `TABLE_NAME` como fallback global, se preferir).
 - Adicione `AWS_REGION` se necessário (o padrão é `us-east-1`).
 
 10. Conceda permissões DynamoDB

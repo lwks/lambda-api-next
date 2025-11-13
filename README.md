@@ -5,8 +5,8 @@ API REST construída com Express e empacotada com `serverless-http` para execuç
 ## Requisitos
 
 - Node.js 20.x (compatível com 22.x)
-- Uma tabela DynamoDB com chave composta (`pk`, `sk`)
-- Variável de ambiente `TABLE_NAME` apontando para a tabela DynamoDB
+- Quatro tabelas DynamoDB com chave composta (`pk`, `sk`): `Empresas`, `Candidaturas`, `Usuarios` e `Vagas`
+- Variáveis de ambiente para cada tabela ou, alternativamente, uma variável `TABLE_NAME` para fallback global
 
 ## Estrutura do projeto
 
@@ -43,7 +43,11 @@ src/
 2. Exporte as variáveis de ambiente necessárias:
 
    ```bash
-   export TABLE_NAME=<nome-da-sua-tabela>
+   export CANDIDATE_TABLE_NAME=Empresas
+   export COMPANY_TABLE_NAME=Candidaturas
+   export USER_TABLE_NAME=Usuarios
+   export JOB_TABLE_NAME=Vagas
+   # opcional: use TABLE_NAME para fornecer um fallback comum
    export AWS_REGION=us-east-1            # opcional, padrão é us-east-1
    ```
 
@@ -120,7 +124,7 @@ Todos os endpoints são versionados sob `/api`. Cada recurso expõe operações 
 
 ## Deploy na AWS Lambda
 
-1. Garanta que o pacote contenha `src/handler.js` e que `TABLE_NAME` esteja configurada na função Lambda.
+1. Garanta que o pacote contenha `src/handler.js` e que as variáveis `CANDIDATE_TABLE_NAME`, `COMPANY_TABLE_NAME`, `USER_TABLE_NAME` e `JOB_TABLE_NAME` estejam configuradas na função Lambda (ou utilize `TABLE_NAME` como fallback global, se apropriado).
 2. Configure a runtime para **Node.js 20.x** (compatível com 22.x).
 3. Use qualquer ferramenta de empacotamento (SAM, Serverless Framework, AWS CDK) apontando para `handler.lambdaHandler`.
 4. Conceda permissões de leitura/escrita na tabela DynamoDB configurada.
