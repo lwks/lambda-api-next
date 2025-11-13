@@ -8,7 +8,7 @@ const jobService = createEntityService('job', TABLE_NAMES.job);
 
 async function createJob(req, res, next) {
   try {
-    validateRequiredFields(req.body, ['title', 'companyId']);
+    validateRequiredFields(req.body, ['guid_id']);
     const job = await jobService.create(req.body);
     return created(res, job);
   } catch (error) {

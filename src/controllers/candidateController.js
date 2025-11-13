@@ -8,7 +8,7 @@ const candidateService = createEntityService('candidate', TABLE_NAMES.candidate)
 
 async function createCandidate(req, res, next) {
   try {
-    validateRequiredFields(req.body, ['fullName', 'email']);
+    validateRequiredFields(req.body, ['guid_id']);
     const candidate = await candidateService.create(req.body);
     return created(res, candidate);
   } catch (error) {

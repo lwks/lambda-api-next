@@ -75,7 +75,7 @@ Todos os endpoints são versionados sob `/api`. Cada recurso expõe operações 
 
 | Método | Rota | Descrição | Body (JSON) |
 | --- | --- | --- | --- |
-| `POST` | `/` | Cria um candidato | `{ "fullName": string, "email": string, ... }`
+| `POST` | `/` | Cria um candidato | `{ "fullName": string, "email": string, "guid_id": string, ... }`
 | `GET` | `/` | Lista candidatos (suporta `limit` e `lastKey`) | — |
 | `GET` | `/:id` | Obtém um candidato | — |
 | `PUT` | `/:id` | Atualiza candidato | Campos parciais |
@@ -85,7 +85,7 @@ Todos os endpoints são versionados sob `/api`. Cada recurso expõe operações 
 
 | Método | Rota | Descrição | Body (JSON) |
 | --- | --- | --- | --- |
-| `POST` | `/` | Cria empresa | `{ "name": string, ... }`
+| `POST` | `/` | Cria empresa | `{ "name": string, "cd_cnpj": string, ... }`
 | `GET` | `/` | Lista empresas (`limit`, `lastKey`) | — |
 | `GET` | `/:id` | Obtém empresa | — |
 | `PUT` | `/:id` | Atualiza empresa | Campos parciais |
@@ -95,7 +95,7 @@ Todos os endpoints são versionados sob `/api`. Cada recurso expõe operações 
 
 | Método | Rota | Descrição | Body (JSON) |
 | --- | --- | --- | --- |
-| `POST` | `/` | Cria usuário | `{ "username": string, "role": string, ... }`
+| `POST` | `/` | Cria usuário | `{ "username": string, "role": string, "cd_cpf": string, ... }`
 | `GET` | `/` | Lista usuários (`limit`, `lastKey`) | — |
 | `GET` | `/:id` | Obtém usuário | — |
 | `PUT` | `/:id` | Atualiza usuário | Campos parciais |
@@ -105,7 +105,7 @@ Todos os endpoints são versionados sob `/api`. Cada recurso expõe operações 
 
 | Método | Rota | Descrição | Body (JSON) |
 | --- | --- | --- | --- |
-| `POST` | `/` | Cria vaga | `{ "title": string, "companyId": string, ... }`
+| `POST` | `/` | Cria vaga | `{ "title": string, "companyId": string, "guid_id": string, ... }`
 | `GET` | `/` | Lista vagas (`limit`, `lastKey`) | — |
 | `GET` | `/:id` | Obtém vaga | — |
 | `PUT` | `/:id` | Atualiza vaga | Campos parciais |
