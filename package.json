@@ -21,6 +21,8 @@
     "@aws-sdk/client-dynamodb": "^3.587.0",
     "@aws-sdk/lib-dynamodb": "^3.587.0",
     "express": "^4.19.2",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
     "serverless-http": "^3.2.0",
     "uuid": "^9.0.1"
   }

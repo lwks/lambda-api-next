@@ -2,11 +2,18 @@ const express = require('express');
 const routes = require('./routes');
 const { error } = require('./utils/response');
 const { NotFoundError, ValidationError } = require('./utils/errors');
+const swaggerUi = require('swagger-ui-express');
+const { swaggerSpec } = require('./swagger');
 
 const app = express();
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.get('/docs.json', (req, res) => {
+  res.json(swaggerSpec);
+});
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
