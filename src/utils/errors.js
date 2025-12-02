@@ -15,7 +15,17 @@ class ValidationError extends Error {
   }
 }
 
+class ExternalServiceError extends Error {
+  constructor(message, details) {
+    super(message);
+    this.name = 'ExternalServiceError';
+    this.statusCode = 502;
+    this.details = details;
+  }
+}
+
 module.exports = {
   NotFoundError,
   ValidationError,
+  ExternalServiceError,
 };
