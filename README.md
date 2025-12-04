@@ -111,6 +111,29 @@ Todos os endpoints são versionados sob `/api`. Cada recurso expõe operações 
 | `PUT` | `/:id` | Atualiza vaga | Campos parciais |
 | `DELETE` | `/:id` | Remove vaga | — |
 
+### CEPs (`/api/zips`)
+
+| Método | Rota | Descrição | Body (JSON) |
+| --- | --- | --- | --- |
+| `GET` | `/:zip` | Consulta cidade e estado a partir de um CEP brasileiro (8 dígitos, com ou sem hífen) | — |
+
+**Resposta de sucesso:**
+
+```json
+{
+  "data": {
+    "state": "SP",
+    "city": "São Paulo"
+  }
+}
+```
+
+**Erros comuns:**
+
+- `400` — CEP inválido (formato diferente de 8 dígitos).
+- `404` — CEP não encontrado no serviço externo.
+- `502` — Falha ao consultar o serviço de CEP.
+
 ### Paginação
 
 - Query `limit`: número máximo de itens (padrão 20).
