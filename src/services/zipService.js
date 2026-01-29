@@ -43,11 +43,14 @@ async function fetchZipData(zip) {
       throw new ExternalServiceError('Resposta inesperada do serviço de CEP.');
     }
 
-    logger.info('ViaCEP retornou localização', { zip: sanitizedZip, uf: payload.uf, localidade: payload.localidade });
-    return {
-      state: payload.uf,
-      city: payload.localidade,
-    };
+    const logradouro = payload.logradouro || '';
+    const bairro = payload.bairro || '';
+    const localidade = payload.localidade;
+    const uf = payload.uf;
+    const location = `${logradouro} - ${bairro} - ${localidade}/${uf}`;
+
+    logger.info('ViaCEP retornou localização', { zip: sanitizedZip, uf, localidade, logradouro, bairro });
+    return location;
   } catch (error) {
     if (error instanceof ValidationError || error instanceof NotFoundError || error instanceof ExternalServiceError) {
       throw error;
