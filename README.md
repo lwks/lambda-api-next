@@ -67,6 +67,13 @@ src/
 
 Todos os endpoints são versionados sob `/api`. Cada recurso expõe operações CRUD completas.
 
+### Documentação
+
+- `GET /docs` — Swagger UI.
+- `GET /docs.json` — JSON OpenAPI.
+
+> **Nota:** Os endpoints de documentação são servidos no mesmo host/porta da API.
+
 ### Saúde
 
 - `GET /health` — Verifica disponibilidade da aplicação.
