@@ -121,12 +121,11 @@ Todos os endpoints são versionados sob `/api`. Cada recurso expõe operações 
 
 ```json
 {
-  "data": {
-    "state": "SP",
-    "city": "São Paulo"
-  }
+  "data": "Rua X - Bairro Y - São Paulo/SP"
 }
 ```
+
+O retorno é uma string de localização composta.
 
 **Erros comuns:**
 
