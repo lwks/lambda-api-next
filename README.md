@@ -37,6 +37,16 @@ src/
     └── validators.js
 ```
 
+## Formato dos itens persistidos
+
+Os itens gravados no DynamoDB seguem o padrão abaixo:
+
+- **Chaves:** `pk` = `ENTITY#<id>`, `sk` = `ENTITY`.
+- **Campos gerados automaticamente:** `id` (UUID), `entityType`, `createdAt`, `updatedAt`.
+- **Payload mesclado:** o payload enviado pelo cliente é mesclado com esses campos antes da persistência.
+
+Para detalhes técnicos, consulte `src/services/entityServiceFactory.js`.
+
 ## Executar localmente
 
 1. Instale as dependências (`npm install`).
