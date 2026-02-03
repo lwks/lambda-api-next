@@ -136,7 +136,7 @@ Todos os endpoints são versionados sob `/api`. Cada recurso expõe operações 
 
 ### Paginação
 
-- Query `limit`: número máximo de itens (padrão 20).
+- Query `limit`: número máximo de itens (restrito de 1 a 100, padrão 20).
 - Query `lastKey`: token Base64URL retornado em listagens anteriores.
 
 ### Respostas e erros
