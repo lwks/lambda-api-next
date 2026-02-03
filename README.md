@@ -43,8 +43,8 @@ src/
 2. Exporte as variáveis de ambiente necessárias:
 
    ```bash
-   export CANDIDATE_TABLE_NAME=Empresas
-   export COMPANY_TABLE_NAME=Candidaturas
+   export CANDIDATE_TABLE_NAME=Candidaturas
+   export COMPANY_TABLE_NAME=Empresas
    export USER_TABLE_NAME=Usuarios
    export JOB_TABLE_NAME=Vagas
    # opcional: use TABLE_NAME para fornecer um fallback comum
