@@ -171,3 +171,4 @@ O retorno é uma string de localização composta.
 ## Testes
 
 Este projeto não inclui testes automatizados. Recomenda-se adicionar suites com Jest ou outra ferramenta conforme necessário.
+
