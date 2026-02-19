@@ -155,3 +155,4 @@ Todos os endpoints são versionados sob `/api`. Cada recurso expõe operações 
 ## Testes
 
 Este projeto não inclui testes automatizados. Recomenda-se adicionar suites com Jest ou outra ferramenta conforme necessário.
+
