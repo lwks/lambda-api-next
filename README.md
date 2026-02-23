@@ -92,11 +92,29 @@ Todos os endpoints são versionados sob `/api`. Cada recurso expõe operações 
 
 | Método | Rota | Descrição | Body (JSON) |
 | --- | --- | --- | --- |
-| `POST` | `/` | Cria um candidato | `{ "fullName": string, "email": string, "guid_id": string, ... }`
+| `POST` | `/` | Cria um candidato | `{ "fullName": string, "email": string, "guid_id": string, "guid_vaga": string, ... }`
+| `POST` | `/by-job-guids` | Lista candidaturas por lista de `guid_vaga` | `{ "guid_vaga": string[] }`
 | `GET` | `/` | Lista candidatos (suporta `limit` e `lastKey`) | — |
 | `GET` | `/:id` | Obtém um candidato | — |
 | `PUT` | `/:id` | Atualiza candidato | Campos parciais |
 | `DELETE` | `/:id` | Remove candidato | — |
+
+#### Filtro por vagas (`POST /api/candidates/by-job-guids`)
+
+Este endpoint recebe uma lista de GUIDs de vagas e retorna as candidaturas vinculadas a qualquer `guid_vaga` informado.
+
+**Body esperado:**
+
+```json
+{
+  "guid_vaga": ["JOB-GUID-001", "JOB-GUID-002"]
+}
+```
+
+**Validações:**
+
+- `guid_vaga` deve ser um array não vazio.
+- Cada item deve ser uma string não vazia.
 
 ### Empresas (`/api/companies`)
 

@@ -3,6 +3,7 @@ const { TABLE_NAMES } = require('../config/tableNames');
 const { validateRequiredFields } = require('../utils/validators');
 const { success, created, noContent } = require('../utils/response');
 const { decodeLastKey, encodeLastKey } = require('../utils/pagination');
+const { ValidationError } = require('../utils/errors');
 const { logger } = require('../utils/logger');
 
 const candidateService = createEntityService('candidate', TABLE_NAMES.candidate);
@@ -10,14 +11,48 @@ const candidateService = createEntityService('candidate', TABLE_NAMES.candidate)
 async function createCandidate(req, res, next) {
   try {
     logger.info('Received request to create candidate', { body: req.body });
-    logger.info('Validating required fields for candidate creation', { requiredFields: ['guid_id'] });
-    validateRequiredFields(req.body, ['guid_id']);
+    logger.info('Validating required fields for candidate creation', { requiredFields: ['guid_id', 'guid_vaga'] });
+    validateRequiredFields(req.body, ['guid_id', 'guid_vaga']);
     logger.info('Validation succeeded for candidate creation');
     const candidate = await candidateService.create(req.body);
     logger.info('Candidate persisted in DynamoDB', { candidateId: candidate.id });
     return created(res, candidate);
   } catch (error) {
     logger.error('Failed to create candidate', { error: error.message, stack: error.stack });
+    return next(error);
+  }
+}
+
+async function listCandidatesByJobGuids(req, res, next) {
+  try {
+    logger.info('Received request to list candidates by guid_vaga', { body: req.body });
+    const { guid_vaga: jobGuids } = req.body || {};
+
+    if (!Array.isArray(jobGuids) || jobGuids.length === 0) {
+      throw new ValidationError('guid_vaga must be a non-empty array of strings');
+    }
+
+    const normalizedJobGuids = [...new Set(
+      jobGuids
+        .filter((guid) => typeof guid === 'string')
+        .map((guid) => guid.trim())
+        .filter(Boolean),
+    )];
+
+    if (normalizedJobGuids.length === 0) {
+      throw new ValidationError('guid_vaga must contain at least one non-empty string');
+    }
+
+    logger.info('Listing candidates by guid_vaga list', { jobGuidCount: normalizedJobGuids.length });
+    const candidates = await candidateService.listByFieldValues({
+      field: 'guid_vaga',
+      values: normalizedJobGuids,
+    });
+
+    logger.info('Candidates filtered by guid_vaga', { itemCount: candidates.length });
+    return success(res, { items: candidates, total: candidates.length });
+  } catch (error) {
+    logger.error('Failed to list candidates by guid_vaga', { error: error.message, stack: error.stack });
     return next(error);
   }
 }
@@ -90,6 +125,7 @@ async function deleteCandidate(req, res, next) {
 module.exports = {
   createCandidate,
   listCandidates,
+  listCandidatesByJobGuids,
   getCandidate,
   updateCandidate,
   deleteCandidate,
