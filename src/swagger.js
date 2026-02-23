@@ -194,27 +194,24 @@ const swaggerDefinition = {
     },
 
     '/api/candidates/by-job-guids': {
-      post: {
+      get: {
         tags: ['Candidates'],
-        summary: 'Lista candidaturas por uma lista de guid_vaga',
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                properties: {
-                  guid_vaga: {
-                    type: 'array',
-                    items: { type: 'string' },
-                    example: ['JOB-GUID-001', 'JOB-GUID-002'],
-                  },
-                },
-                required: ['guid_vaga'],
-              },
+        summary: 'Lista candidaturas por guid_vaga (query string)',
+        parameters: [
+          {
+            in: 'query',
+            name: 'guid_vaga',
+            required: true,
+            schema: {
+              type: 'array',
+              items: { type: 'string' },
             },
+            style: 'form',
+            explode: true,
+            description: 'Pode ser enviado repetido na query ou em formato CSV',
+            example: ['JOB-GUID-001', 'JOB-GUID-002'],
           },
-        },
+        ],
         responses: {
           200: {
             description: 'Lista de candidaturas filtradas por guid_vaga',

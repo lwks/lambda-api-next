@@ -25,16 +25,14 @@ async function createCandidate(req, res, next) {
 
 async function listCandidatesByJobGuids(req, res, next) {
   try {
-    logger.info('Received request to list candidates by guid_vaga', { body: req.body });
-    const { guid_vaga: jobGuids } = req.body || {};
-
-    if (!Array.isArray(jobGuids) || jobGuids.length === 0) {
-      throw new ValidationError('guid_vaga must be a non-empty array of strings');
-    }
+    logger.info('Received request to list candidates by guid_vaga', { query: req.query });
+    const { guid_vaga: rawJobGuids } = req.query || {};
+    const jobGuids = Array.isArray(rawJobGuids) ? rawJobGuids : [rawJobGuids];
 
     const normalizedJobGuids = [...new Set(
       jobGuids
         .filter((guid) => typeof guid === 'string')
+        .flatMap((guid) => guid.split(','))
         .map((guid) => guid.trim())
         .filter(Boolean),
     )];
