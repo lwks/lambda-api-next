@@ -200,12 +200,63 @@ function createEntityService(entityType, providedTableName) {
     };
   }
 
+  async function listByFieldValues({ field, values }) {
+    logger.info('Scanning entities by field values from DynamoDB', {
+      entityType,
+      tableName,
+      field,
+      valueCount: values.length,
+    });
+
+    const collectedItems = [];
+    let exclusiveStartKey;
+    const valueTokens = values.map((_, index) => `:fieldValue${index}`);
+
+    do {
+      const params = {
+        TableName: tableName,
+        FilterExpression: `#entityType = :entityType AND #field IN (${valueTokens.join(', ')})`,
+        ExpressionAttributeNames: {
+          '#entityType': 'entityType',
+          '#field': field,
+        },
+        ExpressionAttributeValues: {
+          ':entityType': entityType,
+          ...values.reduce((acc, value, index) => ({
+            ...acc,
+            [`:fieldValue${index}`]: value,
+          }), {}),
+        },
+      };
+
+      if (exclusiveStartKey) {
+        params.ExclusiveStartKey = exclusiveStartKey;
+      }
+
+      const response = await documentClient.send(new ScanCommand(params));
+      if (response.Items && response.Items.length > 0) {
+        collectedItems.push(...response.Items);
+      }
+
+      exclusiveStartKey = response.LastEvaluatedKey;
+    } while (exclusiveStartKey);
+
+    logger.info('Entity scan by field values completed', {
+      entityType,
+      itemCount: collectedItems.length,
+    });
+
+    return collectedItems;
+  }
+
+
   return {
     create,
     findById,
     update,
     remove,
     list,
+    listByFieldValues,
   };
 }
 

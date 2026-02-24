@@ -28,10 +28,11 @@ const swaggerDefinition = {
         properties: {
           id: { type: 'string', example: 'candidate-123' },
           guid_id: { type: 'string', example: 'GUID-001' },
+          guid_vaga: { type: 'string', example: 'JOB-GUID-001' },
           name: { type: 'string', example: 'John Doe' },
           email: { type: 'string', format: 'email', example: 'john@example.com' },
         },
-        required: ['guid_id'],
+        required: ['guid_id', 'guid_vaga'],
       },
       Company: {
         type: 'object',
@@ -184,6 +185,53 @@ const swaggerDefinition = {
             content: {
               'application/json': {
                 schema: { $ref: '#/components/schemas/Candidate' },
+              },
+            },
+          },
+          400: { $ref: '#/components/responses/ValidationError' },
+        },
+      },
+    },
+
+    '/api/candidates/by-job-guids': {
+      get: {
+        tags: ['Candidates'],
+        summary: 'Lista candidaturas por guid_vaga (query string)',
+        parameters: [
+          {
+            in: 'query',
+            name: 'guid_vaga',
+            required: true,
+            schema: {
+              type: 'array',
+              items: { type: 'string' },
+            },
+            style: 'form',
+            explode: true,
+            description: 'Pode ser enviado repetido na query ou em formato CSV',
+            example: ['JOB-GUID-001', 'JOB-GUID-002'],
+          },
+        ],
+        responses: {
+          200: {
+            description: 'Lista de candidaturas filtradas por guid_vaga',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    data: {
+                      type: 'object',
+                      properties: {
+                        items: {
+                          type: 'array',
+                          items: { $ref: '#/components/schemas/Candidate' },
+                        },
+                        total: { type: 'integer', example: 2 },
+                      },
+                    },
+                  },
+                },
               },
             },
           },

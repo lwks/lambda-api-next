@@ -92,11 +92,29 @@ Todos os endpoints são versionados sob `/api`. Cada recurso expõe operações 
 
 | Método | Rota | Descrição | Body (JSON) |
 | --- | --- | --- | --- |
-| `POST` | `/` | Cria um candidato | `{ "fullName": string, "email": string, "guid_id": string, ... }`
+| `POST` | `/` | Cria um candidato | `{ "fullName": string, "email": string, "guid_id": string, "guid_vaga": string, ... }`
+| `GET` | `/by-job-guids?guid_vaga=...` | Lista candidaturas por `guid_vaga` (query) | â€” |
 | `GET` | `/` | Lista candidatos (suporta `limit` e `lastKey`) | — |
 | `GET` | `/:id` | Obtém um candidato | — |
 | `PUT` | `/:id` | Atualiza candidato | Campos parciais |
 | `DELETE` | `/:id` | Remove candidato | — |
+
+#### Filtro por vagas (`GET /api/candidates/by-job-guids`)
+
+Este endpoint recebe `guid_vaga` na query string e retorna as candidaturas vinculadas.
+
+**Exemplos de query:**
+
+```http
+GET /api/candidates/by-job-guids?guid_vaga=JOB-GUID-001
+GET /api/candidates/by-job-guids?guid_vaga=JOB-GUID-001&guid_vaga=JOB-GUID-002
+GET /api/candidates/by-job-guids?guid_vaga=JOB-GUID-001,JOB-GUID-002
+```
+
+**Validações:**
+
+- `guid_vaga` deve conter ao menos um valor válido.
+- Cada valor deve ser string não vazia.
 
 ### Empresas (`/api/companies`)
 
@@ -171,4 +189,3 @@ O retorno é uma string de localização composta.
 ## Testes
 
 Este projeto não inclui testes automatizados. Recomenda-se adicionar suites com Jest ou outra ferramenta conforme necessário.
-
