@@ -196,7 +196,7 @@ const swaggerDefinition = {
     '/api/candidates/by-job-guids': {
       get: {
         tags: ['Candidates'],
-        summary: 'Lista candidaturas por guid_vaga (query string)',
+        summary: 'Lista candidaturas por guid_vaga (query string), ordenadas por createdAt ASC',
         parameters: [
           {
             in: 'query',
@@ -214,7 +214,7 @@ const swaggerDefinition = {
         ],
         responses: {
           200: {
-            description: 'Lista de candidaturas filtradas por guid_vaga',
+            description: 'Lista de candidaturas filtradas por guid_vaga, ordenadas da mais antiga para a mais nova por createdAt',
             content: {
               'application/json': {
                 schema: {

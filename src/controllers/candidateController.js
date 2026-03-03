@@ -47,8 +47,32 @@ async function listCandidatesByJobGuids(req, res, next) {
       values: normalizedJobGuids,
     });
 
-    logger.info('Candidates filtered by guid_vaga', { itemCount: candidates.length });
-    return success(res, { items: candidates, total: candidates.length });
+    const sortedCandidates = [...candidates].sort((left, right) => {
+      const leftTimestamp = Date.parse(left.createdAt);
+      const rightTimestamp = Date.parse(right.createdAt);
+      const leftIsValid = Number.isFinite(leftTimestamp);
+      const rightIsValid = Number.isFinite(rightTimestamp);
+
+      if (leftIsValid && rightIsValid && leftTimestamp !== rightTimestamp) {
+        return leftTimestamp - rightTimestamp;
+      }
+
+      if (leftIsValid !== rightIsValid) {
+        return leftIsValid ? -1 : 1;
+      }
+
+      const leftId = String(left.id || '');
+      const rightId = String(right.id || '');
+      return leftId.localeCompare(rightId);
+    });
+
+    const invalidCreatedAtCount = sortedCandidates.filter((candidate) => !Number.isFinite(Date.parse(candidate.createdAt))).length;
+    logger.info('Candidates filtered by guid_vaga and sorted by createdAt ASC', {
+      itemCount: sortedCandidates.length,
+      invalidCreatedAtCount,
+      sortingApplied: true,
+    });
+    return success(res, { items: sortedCandidates, total: sortedCandidates.length });
   } catch (error) {
     logger.error('Failed to list candidates by guid_vaga', { error: error.message, stack: error.stack });
     return next(error);

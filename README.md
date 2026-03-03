@@ -1,308 +1,41 @@
-# AGENTS.md — Guia real do repositório `lambda-api-next`
+# Lambda API Next (Backend)
 
-Este documento descreve **o que existe hoje neste repositório**, para orientar agentes (Codex) e desenvolvedores que atuem no backend.
+API REST em Node.js + Express, preparada para AWS Lambda com `serverless-http`, persistindo dados no DynamoDB.
 
-## 1) Escopo real do repositório
+## Stack
 
-Este repositório é uma **API REST em Node.js com Express**, preparada para execução em **AWS Lambda** por meio de `serverless-http`.
+- Node.js 20.x (compat�vel com 22.x)
+- Express 4
+- AWS SDK v3 (`@aws-sdk/client-dynamodb`, `@aws-sdk/lib-dynamodb`)
+- `serverless-http`
+- `swagger-jsdoc` + `swagger-ui-express`
+- CommonJS
 
-Ele **não** contém o front-end em Next.js. O nome do repositório inclui `next`, mas a base atual é um backend JavaScript/CommonJS com rotas HTTP, controllers e integração com DynamoDB.
+## Estrutura principal
 
-## 2) Stack atual
-
-* **Runtime:** Node.js 20.x (compatível com 22.x)
-* **Framework HTTP:** Express 4
-* **Adapter para Lambda:** `serverless-http`
-* **Persistência:** DynamoDB via AWS SDK v3 (`@aws-sdk/client-dynamodb` + `@aws-sdk/lib-dynamodb`)
-* **Documentação:** `swagger-jsdoc` + `swagger-ui-express`
-* **Módulo:** CommonJS
-* **Geração de IDs:** `uuid`
-
-## 3) Estrutura atual do projeto
-
-```text
+```txt
 src/
-├── app.js                  # App Express, middlewares, CORS, docs, health, rotas e tratamento global de erros
-├── handler.js              # Exporta lambdaHandler para AWS Lambda
-├── local.js                # Runner local em Node
-├── aws_services/
-│   └── dynamoClient.js     # DynamoDBClient + DynamoDBDocumentClient
-├── config/
-│   └── tableNames.js       # Resolução dos nomes de tabela por entidade
-├── controllers/
-│   ├── candidateController.js
-│   ├── companyController.js
-│   ├── jobController.js
-│   ├── userController.js
-│   └── zipController.js
-├── routes/
-│   ├── candidateRoutes.js
-│   ├── companyRoutes.js
-│   ├── index.js
-│   ├── jobRoutes.js
-│   ├── userRoutes.js
-│   └── zipRoutes.js
-├── services/
-│   ├── entityServiceFactory.js  # CRUD genérico para entidades em DynamoDB
-│   └── zipService.js            # Integração com ViaCEP
-├── utils/
-│   ├── errors.js
-│   ├── logger.js
-│   ├── pagination.js
-│   ├── response.js
-│   └── validators.js
-└── swagger.js               # Especificação OpenAPI gerada em código
++-- app.js
++-- handler.js
++-- local.js
++-- aws_services/dynamoClient.js
++-- config/tableNames.js
++-- controllers/
++-- routes/
++-- services/
++-- utils/
++-- swagger.js
 ```
 
-## 4) Comportamento HTTP real da aplicação
+## Execu��o local
 
-### Endpoints fora de `/api`
-
-* `GET /health` → retorna `{ "status": "ok" }`
-* `GET /docs` → Swagger UI
-* `GET /docs.json` → OpenAPI em JSON
-
-### Prefixo principal da API
-
-Todas as rotas de negócio ficam sob **`/api`**.
-
-## 5) Rotas reais expostas
-
-### `/api/candidates`
-
-* `POST /api/candidates`
-* `GET /api/candidates`
-* `GET /api/candidates/by-job-guids`
-* `GET /api/candidates/:id`
-* `PUT /api/candidates/:id`
-* `DELETE /api/candidates/:id`
-
-**Campo mínimo exigido no create:**
-
-* `guid_id`
-* `guid_vaga`
-
-### `/api/companies`
-
-* `POST /api/companies`
-* `GET /api/companies`
-* `GET /api/companies/:id`
-* `PUT /api/companies/:id`
-* `DELETE /api/companies/:id`
-
-**Campo mínimo exigido no create:**
-
-* `cd_cnpj`
-
-### `/api/users`
-
-* `POST /api/users`
-* `GET /api/users`
-* `GET /api/users/:id`
-* `PUT /api/users/:id`
-* `DELETE /api/users/:id`
-
-**Campo mínimo exigido no create:**
-
-* `cd_cpf`
-
-### `/api/jobs`
-
-* `POST /api/jobs`
-* `GET /api/jobs`
-* `GET /api/jobs/:id`
-* `PUT /api/jobs/:id`
-* `DELETE /api/jobs/:id`
-
-**Campo mínimo exigido no create:**
-
-* `guid_id`
-
-### `/api/zips`
-
-* `GET /api/zips/:zip`
-
-Consulta CEP brasileiro e retorna a localização como **string** formatada, encapsulada em `data`.
-
-Exemplo de resposta:
-
-```json
-{
-  "data": "Rua X - Bairro Y - São Paulo/SP"
-}
-```
-
-## 6) Regras de validação reais
-
-As validações atuais são **mínimas** e baseadas apenas em presença de campos obrigatórios no create:
-
-* Candidate: `guid_id`, `guid_vaga`
-* Company: `cd_cnpj`
-* User: `cd_cpf`
-* Job: `guid_id`
-
-Não há, hoje, validação de schema rica para payloads (por exemplo: formato de e-mail, enums, tamanho mínimo, etc.).
-
-### Validação de CEP
-
-`GET /api/zips/:zip` aceita apenas CEP com:
-
-* `12345678`
-* `12345-678`
-
-Se o formato for inválido, retorna erro `400`.
-
-## 7) Formato real de resposta
-
-### Sucesso
-
-Respostas de sucesso usam o helper padrão:
-
-```json
-{ "data": ... }
-```
-
-### Criação
-
-Criações retornam:
-
-* **status `201`**
-* body no formato `{ "data": ... }`
-
-### Delete
-
-Deletes retornam:
-
-* **status `204`**
-* **sem body**
-
-### Erros
-
-Erros retornam:
-
-```json
-{ "message": "..." }
-```
-
-ou, quando houver detalhes:
-
-```json
-{ "message": "...", "details": { ... } }
-```
-
-## 8) CORS real
-
-O middleware global de CORS hoje aplica:
-
-* `Access-Control-Allow-Origin: *`
-* `Access-Control-Allow-Methods: GET,POST,PUT,DELETE,OPTIONS`
-* `Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With`
-
-Requests `OPTIONS` retornam **`204`** diretamente.
-
-> Observação importante: **`PATCH` não está liberado** no CORS e também **não existe rota PATCH**.
-
-## 9) Persistência real no DynamoDB
-
-A persistência é centralizada em `entityServiceFactory.js`.
-
-### Modelo de chave
-
-Todos os registros seguem:
-
-* `pk = <ENTITYTYPE>#<id>` em maiúsculas
-* `sk = ENTITY`
-
-Exemplos:
-
-* candidate → `pk = CANDIDATE#<id>`
-* company → `pk = COMPANY#<id>`
-* user → `pk = USER#<id>`
-* job → `pk = JOB#<id>`
-
-### Campos gerados automaticamente
-
-Ao criar um item, o backend acrescenta:
-
-* `id` (UUID, se não vier no payload)
-* `entityType`
-* `pk`
-* `sk`
-* `createdAt`
-* `updatedAt`
-
-### Update
-
-No update:
-
-* `id` e `entityType` não são sobrescritos pela expressão de update
-* `updatedAt` é sempre atualizado
-* se nenhum campo válido for enviado, a API apenas retorna o registro atual
-
-## 10) Paginação real
-
-Listagens de CRUD usam:
-
-* `limit` (default `20`, mínimo `1`, máximo `100`)
-* `lastKey` (token em Base64URL)
-
-O token recebido em `lastKey` é decodificado; se vier inválido, a API simplesmente ignora o token e segue sem cursor.
-
-Resposta típica de listagem:
-
-```json
-{
-  "data": {
-    "items": [],
-    "lastKey": "..."
-  }
-}
-```
-
-## 11) Como as consultas funcionam hoje
-
-### CRUD padrão
-
-As listagens usam **`ScanCommand` com `FilterExpression` por `entityType`**.
-
-Isso significa que, no estado atual, a API **não usa Query otimizada por partição para listar**; ela faz varredura na tabela configurada e filtra pela entidade.
-
-### Filtro de candidatos por vaga
-
-`GET /api/candidates/by-job-guids`:
-
-* aceita `guid_vaga` repetido na query
-* aceita CSV (`guid_vaga=A,B`)
-* normaliza, remove duplicados e ignora vazios
-* executa varreduras (`Scan`) filtrando por `guid_vaga`
-* percorre todas as páginas até esgotar resultados
-
-Isso é funcional, mas tem custo e latência proporcionais ao volume da tabela.
-
-## 12) Resolução de tabelas (comportamento exato atual)
-
-As controllers instanciam os serviços com os nomes resolvidos em `src/config/tableNames.js`.
-
-Hoje, os defaults efetivos são:
-
-* candidates → `Candidaturas`
-* companies → `Empresas`
-* users → `Usuarios`
-* jobs → `Vagas`
-
-Ou seja, **na prática atual**, se as variáveis específicas não forem definidas, o código cai nesses nomes fixos.
-
-> Observação importante: embora `entityServiceFactory` tenha suporte a `TABLE_NAME`, esse fallback global **não é o caminho efetivo nas controllers atuais**, porque elas já passam um nome de tabela explícito vindo de `tableNames.js`.
-
-## 13) Execução local real
-
-1. Instalar dependências:
+1. Instale depend�ncias:
 
 ```bash
 npm install
 ```
 
-2. Subir localmente:
+2. Rode localmente:
 
 ```bash
 npm run dev
@@ -310,61 +43,392 @@ npm run dev
 npm start
 ```
 
-3. Porta padrão:
+3. Porta padr�o: `3000` (`PORT` opcional)
 
-* `PORT` default = `3000`
+## Deploy AWS Lambda
 
-## 14) Deploy real na AWS Lambda
+- Handler exportado: `lambdaHandler` em `src/handler.js`
+- Runtime recomendado: Node.js 20.x
+- Entry point t�pico: `src/handler.lambdaHandler`
 
-O handler exposto para Lambda é:
+## Vari�veis de ambiente
 
-* `lambdaHandler` em `src/handler.js`
+- `AWS_REGION` ou `AWS_DEFAULT_REGION` (default: `us-east-1`)
+- `PORT` (local)
+- Tabelas DynamoDB:
+  - `CANDIDATE_TABLE_NAME` (default `Candidaturas`)
+  - `COMPANY_TABLE_NAME` (default `Empresas`)
+  - `USER_TABLE_NAME` (default `Usuarios`)
+  - `JOB_TABLE_NAME` (default `Vagas`)
 
-Ao empacotar e publicar:
+## CORS
 
-* use runtime Node.js 20.x (ou 22.x compatível)
-* aponte o handler para `src/handler.lambdaHandler` (ou equivalente no empacotamento, conforme a ferramenta)
-* garanta permissão de leitura/escrita nas tabelas DynamoDB utilizadas
-* configure `AWS_REGION` / `AWS_DEFAULT_REGION` se necessário
+A API responde globalmente com:
 
-## 15) O que este repositório NÃO tem hoje
+- `Access-Control-Allow-Origin: *`
+- `Access-Control-Allow-Methods: GET,POST,PUT,DELETE,OPTIONS`
+- `Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With`
+- `OPTIONS` retorna `204`
 
-Para evitar suposições erradas, este repositório **não implementa**, no estado atual:
+## Padr�o de respostas
 
-* autenticação/autorização
-* integração com Cognito
-* front-end em Next.js
-* BFF do Next
-* rotas `PATCH`
-* testes automatizados
-* validação avançada de contratos
-* acesso por índices secundários (GSI/LSI) para listagens principais
+### Sucesso
 
-## 16) Diretrizes para agentes trabalhando neste repositório
+```json
+{ "data": ... }
+```
 
-Se você estiver atuando neste código:
+### Cria��o
 
-1. Trate este projeto como **backend Express serverless**, não como front.
-2. Preserve o contrato real de respostas (`{ data: ... }`, `204` sem body, erros com `message`).
-3. Não assuma validações ricas já existentes; hoje elas são mínimas.
-4. Tenha atenção a custo/performance: listagens e filtros atuais fazem **Scan**.
-5. Se for evoluir escalabilidade, a principal oportunidade está em:
+- Status `201`
+- Body: `{ "data": ... }`
 
-   * modelagem de acesso por chave
-   * uso de GSIs
-   * evitar `Scan` para consultas frequentes
-6. Se for alterar tabelas/config, valide o impacto da resolução atual de nomes em `tableNames.js`.
-7. Não documente comportamento do front neste arquivo, a menos que o código do backend passe a depender explicitamente disso.
+### Delete
 
-## 17) Resumo executivo
+- Status `204`
+- Sem body
 
-Este repositório é uma **API REST Node.js/Express para AWS Lambda**, com CRUD genérico em DynamoDB para:
+### Erro
 
-* candidatos
-* empresas
-* usuários
-* vagas
-* consulta de CEP via ViaCEP
+```json
+{ "message": "..." }
+```
 
-O desenho atual privilegia simplicidade e rapidez de implementação. O principal ponto de atenção arquitetural é que as listagens e filtros usam **scan**, o que funciona para baixo volume, mas pode aumentar custo e latência conforme a base crescer.
-   
+ou
+
+```json
+{ "message": "...", "details": { ... } }
+```
+
+## Endpoints fora de `/api`
+
+### `GET /health`
+
+Resposta `200`:
+
+```json
+{ "status": "ok" }
+```
+
+### `GET /docs`
+
+Swagger UI.
+
+### `GET /docs.json`
+
+OpenAPI JSON gerado em c�digo.
+
+## Endpoints da API (`/api`)
+
+## Candidatos
+
+### `POST /api/candidates`
+
+Campos m�nimos obrigat�rios:
+
+- `guid_id`
+- `guid_vaga`
+
+Poss�veis retornos:
+
+- `201` `{ data: candidate }`
+- `400` `{ message, details }` (campos obrigat�rios ausentes)
+- `500` `{ message }`
+
+### `GET /api/candidates`
+
+Query params:
+
+- `limit` (default `20`, min `1`, max `100`)
+- `lastKey` (token Base64URL)
+
+Poss�veis retornos:
+
+- `200`
+
+```json
+{
+  "data": {
+    "items": [],
+    "lastKey": "eyJwayI6Ii4uLiJ9"
+  }
+}
+```
+
+- `500` `{ message }`
+
+### `GET /api/candidates/by-job-guids`
+
+Filtro por `guid_vaga` (aceita repetido ou CSV):
+
+- `?guid_vaga=A&guid_vaga=B`
+- `?guid_vaga=A,B`
+
+Comportamento:
+
+- normaliza valores
+- remove duplicados
+- ignora vazios
+- ordena por `createdAt` ascendente (mais antigo -> mais novo)
+
+Poss�veis retornos:
+
+- `200`
+
+```json
+{
+  "data": {
+    "items": [],
+    "total": 0
+  }
+}
+```
+
+- `400` `{ message, details }` quando `guid_vaga` n�o cont�m ao menos um valor v�lido
+- `500` `{ message }`
+
+### `GET /api/candidates/:id`
+
+Poss�veis retornos:
+
+- `200` `{ data: candidate }`
+- `404` `{ message: "candidate with id <id> not found" }`
+- `500` `{ message }`
+
+### `PUT /api/candidates/:id`
+
+Poss�veis retornos:
+
+- `200` `{ data: candidateAtualizado }`
+- `404` `{ message: "candidate with id <id> not found" }`
+- `500` `{ message }`
+
+Observa��o: se nenhum campo v�lido for enviado no body, a API retorna o registro atual.
+
+### `DELETE /api/candidates/:id`
+
+Poss�veis retornos:
+
+- `204` sem body
+- `404` `{ message: "candidate with id <id> not found" }`
+- `500` `{ message }`
+
+## Empresas
+
+### `POST /api/companies`
+
+Campo m�nimo obrigat�rio:
+
+- `cd_cnpj`
+
+Poss�veis retornos:
+
+- `201` `{ data: company }`
+- `400` `{ message, details }`
+- `500` `{ message }`
+
+### `GET /api/companies`
+
+Query params:
+
+- `limit` (default `20`, min `1`, max `100`)
+- `lastKey`
+
+Poss�veis retornos:
+
+- `200` `{ data: { items, lastKey } }`
+- `500` `{ message }`
+
+### `GET /api/companies/:id`
+
+Poss�veis retornos:
+
+- `200` `{ data: company }`
+- `404` `{ message: "company with id <id> not found" }`
+- `500` `{ message }`
+
+### `PUT /api/companies/:id`
+
+Poss�veis retornos:
+
+- `200` `{ data: companyAtualizada }`
+- `404` `{ message: "company with id <id> not found" }`
+- `500` `{ message }`
+
+### `DELETE /api/companies/:id`
+
+Poss�veis retornos:
+
+- `204` sem body
+- `404` `{ message: "company with id <id> not found" }`
+- `500` `{ message }`
+
+## Usu�rios
+
+### `POST /api/users`
+
+Campo m�nimo obrigat�rio:
+
+- `cd_cpf`
+
+Poss�veis retornos:
+
+- `201` `{ data: user }`
+- `400` `{ message, details }`
+- `500` `{ message }`
+
+### `GET /api/users`
+
+Query params:
+
+- `limit` (default `20`, min `1`, max `100`)
+- `lastKey`
+
+Poss�veis retornos:
+
+- `200` `{ data: { items, lastKey } }`
+- `500` `{ message }`
+
+### `GET /api/users/:id`
+
+Poss�veis retornos:
+
+- `200` `{ data: user }`
+- `404` `{ message: "user with id <id> not found" }`
+- `500` `{ message }`
+
+### `PUT /api/users/:id`
+
+Poss�veis retornos:
+
+- `200` `{ data: userAtualizado }`
+- `404` `{ message: "user with id <id> not found" }`
+- `500` `{ message }`
+
+### `DELETE /api/users/:id`
+
+Poss�veis retornos:
+
+- `204` sem body
+- `404` `{ message: "user with id <id> not found" }`
+- `500` `{ message }`
+
+## Vagas
+
+### `POST /api/jobs`
+
+Campo m�nimo obrigat�rio:
+
+- `guid_id`
+
+Poss�veis retornos:
+
+- `201` `{ data: job }`
+- `400` `{ message, details }`
+- `500` `{ message }`
+
+### `GET /api/jobs`
+
+Query params:
+
+- `limit` (default `20`, min `1`, max `100`)
+- `lastKey`
+
+Poss�veis retornos:
+
+- `200` `{ data: { items, lastKey } }`
+- `500` `{ message }`
+
+### `GET /api/jobs/:id`
+
+Poss�veis retornos:
+
+- `200` `{ data: job }`
+- `404` `{ message: "job with id <id> not found" }`
+- `500` `{ message }`
+
+### `PUT /api/jobs/:id`
+
+Poss�veis retornos:
+
+- `200` `{ data: jobAtualizada }`
+- `404` `{ message: "job with id <id> not found" }`
+- `500` `{ message }`
+
+### `DELETE /api/jobs/:id`
+
+Poss�veis retornos:
+
+- `204` sem body
+- `404` `{ message: "job with id <id> not found" }`
+- `500` `{ message }`
+
+## CEP
+
+### `GET /api/zips/:zip`
+
+Aceita:
+
+- `12345678`
+- `12345-678`
+
+Resposta de sucesso:
+
+- `200`
+
+```json
+{
+  "data": "Rua X - Bairro Y - Cidade/UF"
+}
+```
+
+Poss�veis erros:
+
+- `400` CEP inv�lido:
+
+```json
+{
+  "message": "CEP inv�lido. Utilize 8 d�gitos, com ou sem h�fen.",
+  "details": { "zip": "valor-invalido" }
+}
+```
+
+- `404` CEP n�o encontrado
+- `502` erro no servi�o externo (ViaCEP)
+
+## Modelo de persist�ncia no DynamoDB
+
+Cada item criado recebe automaticamente:
+
+- `id` (UUID se n�o informado)
+- `entityType`
+- `pk`
+- `sk`
+- `createdAt`
+- `updatedAt`
+
+Chaves:
+
+- `pk = <ENTITYTYPE>#<id>` (ex.: `CANDIDATE#123`)
+- `sk = ENTITY`
+
+Entidades atuais:
+
+- candidate
+- company
+- user
+- job
+
+## Pagina��o
+
+Listagens de CRUD retornam cursor em `lastKey` (Base64URL):
+
+- Envie `lastKey` recebido anteriormente para continuar pagina��o.
+- Se `lastKey` vier inv�lido, ele � ignorado silenciosamente.
+
+## Observa��es importantes
+
+- N�o h� autentica��o/autoriza��o implementada.
+- N�o h� rotas `PATCH`.
+- N�o h� testes automatizados no reposit�rio.
+- Listagens e filtros principais usam `Scan` no DynamoDB (com `FilterExpression` por `entityType`).

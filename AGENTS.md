@@ -1,317 +1,370 @@
-# Guia do Front-end (NEX ATS) 
+# AGENTS.md — Guia real do repositório `lambda-api-next`
+
+Este documento descreve **o que existe hoje neste repositório**, para orientar agentes (Codex) e desenvolvedores que atuem no backend.
+
+## 1) Escopo real do repositório
+
+Este repositório é uma **API REST em Node.js com Express**, preparada para execução em **AWS Lambda** por meio de `serverless-http`.
+
+Ele **não** contém o front-end em Next.js. O nome do repositório inclui `next`, mas a base atual é um backend JavaScript/CommonJS com rotas HTTP, controllers e integração com DynamoDB.
+
+## 2) Stack atual
 
-Este documento foi criado para facilitar o trabalho de agentes (Codex) e desenvolvedores no repositório **backend**, explicando de forma prática como o front-end atual funciona, quais telas existem, quais contratos de integração já estão sendo usados e quais flexibilidades de payload/resposta o front já implementa.
+* **Runtime:** Node.js 20.x (compatível com 22.x)
+* **Framework HTTP:** Express 4
+* **Adapter para Lambda:** `serverless-http`
+* **Persistência:** DynamoDB via AWS SDK v3 (`@aws-sdk/client-dynamodb` + `@aws-sdk/lib-dynamodb`)
+* **Documentação:** `swagger-jsdoc` + `swagger-ui-express`
+* **Módulo:** CommonJS
+* **Geração de IDs:** `uuid`
 
-> Objetivo: permitir que o backend exponha respostas compatíveis com o front sem precisar deduzir comportamento pela UI.
+## 3) Estrutura atual do projeto
 
----
+```text
+src/
+├── app.js                  # App Express, middlewares, CORS, docs, health, rotas e tratamento global de erros
+├── handler.js              # Exporta lambdaHandler para AWS Lambda
+├── local.js                # Runner local em Node
+├── aws_services/
+│   └── dynamoClient.js     # DynamoDBClient + DynamoDBDocumentClient
+├── config/
+│   └── tableNames.js       # Resolução dos nomes de tabela por entidade
+├── controllers/
+│   ├── candidateController.js
+│   ├── companyController.js
+│   ├── jobController.js
+│   ├── userController.js
+│   └── zipController.js
+├── routes/
+│   ├── candidateRoutes.js
+│   ├── companyRoutes.js
+│   ├── index.js
+│   ├── jobRoutes.js
+│   ├── userRoutes.js
+│   └── zipRoutes.js
+├── services/
+│   ├── entityServiceFactory.js  # CRUD genérico para entidades em DynamoDB
+│   └── zipService.js            # Integração com ViaCEP
+├── utils/
+│   ├── errors.js
+│   ├── logger.js
+│   ├── pagination.js
+│   ├── response.js
+│   └── validators.js
+└── swagger.js               # Especificação OpenAPI gerada em código
+```
 
-## 1) Visão geral do projeto
+## 4) Comportamento HTTP real da aplicação
 
-- Projeto: **NEX People Solutions / NexJob**.
-- Tipo: aplicação web em **Next.js (App Router)**.
-- Função principal: publicar vagas e receber candidaturas.
-- Linguagem: TypeScript.
-- UI: Tailwind + componentes baseados em Radix/ShadCN.
+### Endpoints fora de `/api`
 
-### Stack relevante
+* `GET /health` → retorna `{ "status": "ok" }`
+* `GET /docs` → Swagger UI
+* `GET /docs.json` → OpenAPI em JSON
 
-- Next.js `16.x`
-- React `19.x`
-- `fetch` nativo do Next (server/client)
-- `lucide-react` para ícones
-- API consumida via `NEXT_PUBLIC_API_BASE_URL` (com fallback default no código)
+### Prefixo principal da API
 
----
+Todas as rotas de negócio ficam sob **`/api`**.
 
-## 2) Rotas de tela (front-end)
+## 5) Rotas reais expostas
 
-### `/` — Listagem de vagas
+### `/api/candidates`
 
-**Comportamento**
-- Busca vagas no backend (`GET /jobs` no base URL configurado).
-- Renderiza cards com:
-  - título
-  - empresa
-  - localização
-  - tipo de trabalho/contratação
-  - resumo/descrição
-- Ao clicar em “Ver mais”, abre modal com detalhes e botão “Candidatar-se”.
+* `POST /api/candidates`
+* `GET /api/candidates`
+* `GET /api/candidates/by-job-guids`
+* `GET /api/candidates/:id`
+* `PUT /api/candidates/:id`
+* `DELETE /api/candidates/:id`
 
-**Regra de candidatura**
-- Se API retornar link externo de candidatura (`applyUrl` e variantes), botão abre link externo.
-- Caso contrário, fallback para rota interna: `/candidaturas?vaga=<id>`.
+**Campo mínimo exigido no create:**
 
----
+* `guid_id`
+* `guid_vaga`
 
-### `/candidaturas` — Onboarding do candidato (multi-step)
+### `/api/companies`
 
-Fluxo em **4 etapas**:
-1. Dados pessoais
-2. Dados profissionais
-3. Upload de currículo (PDF)
-4. Interesses profissionais
+* `POST /api/companies`
+* `GET /api/companies`
+* `GET /api/companies/:id`
+* `PUT /api/companies/:id`
+* `DELETE /api/companies/:id`
 
-Ao finalizar:
-- Monta payload com dados do candidato.
-- Gera `guid_id` no front (`crypto.randomUUID`).
-- Preenche `cd_cnpj` com valor aleatório (placeholder temporário no front).
-- Envia `POST /api/candidates` (proxy interno do Next), que repassa para backend.
+**Campo mínimo exigido no create:**
 
----
+* `cd_cnpj`
 
-### `/jobs/create` — Criação de vaga
+### `/api/users`
 
-Formulário para criação de vaga com validações client-side:
-- título mínimo
-- descrição mínima
-- faixa salarial válida
-- CEP com consulta para preencher cidade/estado
+* `POST /api/users`
+* `GET /api/users`
+* `GET /api/users/:id`
+* `PUT /api/users/:id`
+* `DELETE /api/users/:id`
 
-Ao salvar:
-- Monta payload padronizado para vaga.
-- Gera `guid_id` no front.
-- Define `status: "Aberto"`.
-- Envia `POST /api/jobs` (proxy interno do Next), que repassa para backend.
+**Campo mínimo exigido no create:**
 
----
+* `cd_cpf`
 
-### `/empresa/candidaturas` — Pipeline visual (mock)
+### `/api/jobs`
 
-- Tela de board Kanban para candidaturas por etapa.
-- Atualmente alimentada por **dados mockados locais** (sem integração real).
-- Útil como referência de UX para futuras rotas de empresa e movimentação de status.
+* `POST /api/jobs`
+* `GET /api/jobs`
+* `GET /api/jobs/:id`
+* `PUT /api/jobs/:id`
+* `DELETE /api/jobs/:id`
 
----
+**Campo mínimo exigido no create:**
 
-## 3) Endpoints que o front usa hoje
+* `guid_id`
 
-## 3.1 Endpoints diretos ao backend
+### `/api/zips`
 
-Base URL: `NEXT_PUBLIC_API_BASE_URL` (se não existir, usa fallback interno no `config.ts`).
+* `GET /api/zips/:zip`
 
-- `GET {BASE}/jobs` — listagem de vagas.
-- `GET {BASE}/zips/:zip` — consulta CEP (em alguns cenários, via proxy).
-- (existe configuração para users/candidates/applications, mas nem tudo está ativo em tela).
+Consulta CEP brasileiro e retorna a localização como **string** formatada, encapsulada em `data`.
 
-## 3.2 Endpoints proxy internos do Next (BFF leve)
+Exemplo de resposta:
 
-Esses endpoints existem no front para contornar CORS, padronizar cabeçalhos e repassar resposta do backend:
+```json
+{
+  "data": "Rua X - Bairro Y - São Paulo/SP"
+}
+```
 
-- `POST /api/jobs` → repassa para `{BASE}/jobs`
-- `POST /api/candidates` → repassa para `{BASE}/candidates`
-- `GET /api/zips/:zip` → repassa para `{BASE}/zips/:zip`
-- `OPTIONS` em rotas `/api/*` respondem CORS com status `204`
+## 6) Regras de validação reais
 
-### CORS no front
+As validações atuais são **mínimas** e baseadas apenas em presença de campos obrigatórios no create:
 
-- `Access-Control-Allow-Origin: *`
-- `Access-Control-Allow-Methods: GET,POST,PUT,PATCH,DELETE,OPTIONS`
-- `Access-Control-Allow-Headers: Content-Type, Authorization`
+* Candidate: `guid_id`, `guid_vaga`
+* Company: `cd_cnpj`
+* User: `cd_cpf`
+* Job: `guid_id`
 
----
+Não há, hoje, validação de schema rica para payloads (por exemplo: formato de e-mail, enums, tamanho mínimo, etc.).
 
-## 4) Contratos de payload enviados pelo front
+### Validação de CEP
 
-## 4.1 Payload de criação de candidato (`POST /candidates`)
+`GET /api/zips/:zip` aceita apenas CEP com:
 
-Campos enviados (payload principal):
+* `12345678`
+* `12345-678`
 
-- `nome: string`
-- `documento: string` (CPF ou RG sem máscara)
-- `localResidencia: string` (CEP com 8 dígitos)
-- `endereco: string`
-- `contatoCel: string` (telefone sem máscara)
-- `contato: string` (email)
-- `lgpdAccepted: boolean` (esperado `true`)
-- `experiencia: string`
-- `industria: string`
-- `salario: string`
-- `cargoInteresse: string`
-- `industriaInteresse: string`
-- `cargoInteresseDetalhado: string`
-- `tipoTrabalho: string`
-- `tipoContratacao: string`
-- `compartilhamentoAccepted: boolean` (esperado `true`)
+Se o formato for inválido, retorna erro `400`.
 
-Campos complementares adicionados pelo front:
-- `guid_id: string` (UUID gerado no client)
-- `cd_cnpj: string` (placeholder aleatório de 14 dígitos, temporário)
+## 7) Formato real de resposta
 
-### Observações para backend
+### Sucesso
 
-- O front bloqueia submit se dados obrigatórios estiverem faltando.
-- Se backend exigir campos extras, ideal manter como opcionais inicialmente para evitar quebra.
-- Backend deve tolerar strings simples e não depender de enums estritos neste momento.
+Respostas de sucesso usam o helper padrão:
 
----
+```json
+{ "data": ... }
+```
 
-## 4.2 Payload de criação de vaga (`POST /jobs`)
+### Criação
 
-Estrutura enviada:
+Criações retornam:
 
-- `titulo: string`
-- `descricao: string` (HTML/texto rico do editor)
-- `cargo: string` (`estagiario|analista|coordenador|gerente|diretor`)
-- `nivel: string` (`jr|pl|sr|esp`) — pode vir vazio dependendo do cargo
-- `localizacao: string` (CEP)
-- `modelo_trabalho: string`
-- `publicada_em: string` (`YYYY-MM-DD`)
-- `formato_contratacao: string` (`pj|integral|temporario|meio_periodo`)
-- `exibir_salario: boolean`
-- `guid_id: string`
-- `status: string` (fixo atual: `"Aberto"`)
-- `cidade: string`
-- `estado: string`
-- `skills: string[]`
-- `beneficios: string[]`
-- `orcamento: { valor_inicial: number; valor_final: number }`
+* **status `201`**
+* body no formato `{ "data": ... }`
 
-### Observações para backend
+### Delete
 
-- `skills` e `beneficios` são montados por split de texto (vírgula/quebra de linha).
-- `descricao` pode conter HTML.
-- Salário pode ser `0` se usuário não preencher adequadamente (front tenta validar, mas backend deve revalidar).
+Deletes retornam:
 
----
+* **status `204`**
+* **sem body**
 
-## 5) Formatos de resposta tolerados pela listagem de vagas
+### Erros
 
-A listagem de vagas do front é **resiliente** e tenta normalizar diferentes formatos de API.
+Erros retornam:
 
-## 5.1 Coleções aceitas
+```json
+{ "message": "..." }
+```
 
-O front tenta encontrar array de vagas em:
+ou, quando houver detalhes:
 
-- payload direto `[]`
-- `items`
-- `results`
-- `data`
-- `vagas`
-- `jobs`
-- `content`
+```json
+{ "message": "...", "details": { ... } }
+```
 
-Além disso, tenta procurar recursivamente em objetos aninhados.
+## 8) CORS real
 
-## 5.2 Campos aceitos por vaga (sinônimos)
+O middleware global de CORS hoje aplica:
 
-Para reduzir fricção, o front aceita múltiplos nomes para o mesmo dado.
+* `Access-Control-Allow-Origin: *`
+* `Access-Control-Allow-Methods: GET,POST,PUT,DELETE,OPTIONS`
+* `Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With`
 
-### ID
-- `id`, `slug`, `codigo`, `uuid`, `guid_id`, `pk`
+Requests `OPTIONS` retornam **`204`** diretamente.
 
-### Título
-- `titulo`, `title`, `nome`
+> Observação importante: **`PATCH` não está liberado** no CORS e também **não existe rota PATCH**.
 
-### Empresa
-- `company`, `empresa`, `nome_empresa`, `companyId`
+## 9) Persistência real no DynamoDB
 
-### Localização
-- `cidade/city` + `estado/uf/state`
-- fallback: `localizacao/location`
+A persistência é centralizada em `entityServiceFactory.js`.
 
-### Tipo de trabalho/contratação
-- `workType`, `tipoTrabalho`, `modalidade`, `tipoContratacao`, `tipo_contratacao`, `modelo_trabalho`, `regime`, `jornada`, `nivel`
+### Modelo de chave
 
-### Descrição
-- `descricao`, `description`, `resumo`, `summary`
+Todos os registros seguem:
 
-### Link de candidatura
-- `applyUrl`, `apply_url`, `link`, `linkCandidatura`, `candidatura_url`, `candidatura_link`
+* `pk = <ENTITYTYPE>#<id>` em maiúsculas
+* `sk = ENTITY`
 
-### Dados extras da empresa (modal)
-- segmento: `segmento|segment|setor|sector`
-- ramo/indústria: `ramo_atuacao|ramoAtuacao|industry|area_atuacao`
-- site: `site|website`
-- site empresa: `site_empresa|siteEmpresa|companyWebsite`
-- e-mail contato: `email|contactEmail|email_contato|contato_email`
+Exemplos:
 
+* candidate → `pk = CANDIDATE#<id>`
+* company → `pk = COMPANY#<id>`
+* user → `pk = USER#<id>`
+* job → `pk = JOB#<id>`
 
-## 6) Comportamento da integração de CEP (`/zips/:zip`)
+### Campos gerados automaticamente
 
-O front espera consultar CEP com 8 dígitos e aceita respostas flexíveis:
+Ao criar um item, o backend acrescenta:
 
-Campos entendidos:
-- `logradouro|street|address`
-- `bairro|neighborhood`
-- `localidade|cidade|city`
-- `uf|estado|state`
-- `cep`
+* `id` (UUID, se não vier no payload)
+* `entityType`
+* `pk`
+* `sk`
+* `createdAt`
+* `updatedAt`
 
-Também aceita payload aninhado em `data`.
+### Update
 
-### Códigos esperados
+No update:
 
-- `400` para CEP inválido
-- `404` para CEP não encontrado
-- `5xx` para falha externa/interna
+* `id` e `entityType` não são sobrescritos pela expressão de update
+* `updatedAt` é sempre atualizado
+* se nenhum campo válido for enviado, a API apenas retorna o registro atual
 
----
+## 10) Paginação real
 
-## 7) Validações de front importantes para o backend conhecer
+Listagens de CRUD usam:
 
-## 7.1 Candidato
+* `limit` (default `20`, mínimo `1`, máximo `100`)
+* `lastKey` (token em Base64URL)
 
-- Nome: espera nome completo (>= 2 palavras).
-- Documento:
-  - aceita CPF (11 dígitos + validação de dígito verificador)
-  - ou RG (7 a 10 dígitos)
-- Email: regex simples.
-- Telefone celular: 10 a 11 dígitos.
-- CEP: 8 dígitos + tentativa de preencher cidade/estado.
-- Consentimentos (`lgpdAccepted` e `compartilhamentoAccepted`) devem ser `true`.
+O token recebido em `lastKey` é decodificado; se vier inválido, a API simplesmente ignora o token e segue sem cursor.
 
-## 7.2 Vaga
+Resposta típica de listagem:
 
-- Título mínimo: 5 chars.
-- Descrição mínima: 30 chars (texto limpo sem tags).
-- CEP obrigatório e validado com lookup.
-- Faixa salarial com validação numérica e relação entre inicial/final.
+```json
+{
+  "data": {
+    "items": [],
+    "lastKey": "..."
+  }
+}
+```
 
-> Mesmo com validações de front, o backend deve manter validações próprias (fonte de verdade).
+## 11) Como as consultas funcionam hoje
 
----
+### CRUD padrão
 
-## 8) Estado atual de maturidade (o que já está em produção de código)
+As listagens usam **`ScanCommand` com `FilterExpression` por `entityType`**.
 
-- Integração real ativa:
-  - listagem de vagas
-  - criação de vaga
-  - criação de candidato
-  - consulta de CEP
-- Funcionalidades ainda mockadas/parciais:
-  - board completo de candidaturas da empresa
-  - parte de gestão de usuários/empresas
-  - vínculo real candidato↔vaga↔empresa em algumas telas
+Isso significa que, no estado atual, a API **não usa Query otimizada por partição para listar**; ela faz varredura na tabela configurada e filtra pela entidade.
 
----
+### Filtro de candidatos por vaga
 
-## 9) Recomendações práticas para o backend (prioridade alta)
+`GET /api/candidates/by-job-guids`:
 
-1. **Manter compatibilidade com os campos já enviados pelo front** em `/jobs` e `/candidates`.
-2. **Retornar mensagens de erro claras** em JSON (`message`, `error` ou `detail`) — o front já tenta ler esses campos.
-3. **Garantir CORS** para ambientes sem proxy (quando front consumir direto).
-4. **Padronizar paginação** em listagens (`limit`, `lastKey`) sem quebrar `GET /jobs` simples.
-5. **Documentar contrato canônico** e, se possível, manter aliases temporários para transição.
-6. **Evitar exigir campos não presentes na UI atual** até existir campo no front.
+* aceita `guid_vaga` repetido na query
+* aceita CSV (`guid_vaga=A,B`)
+* normaliza, remove duplicados e ignora vazios
+* executa varreduras (`Scan`) filtrando por `guid_vaga`
+* percorre todas as páginas até esgotar resultados
 
----
+Isso é funcional, mas tem custo e latência proporcionais ao volume da tabela.
 
-## 10) Variáveis de ambiente relevantes para integração
+## 12) Resolução de tabelas (comportamento exato atual)
 
----
+As controllers instanciam os serviços com os nomes resolvidos em `src/config/tableNames.js`.
 
-## 11) Resumo executivo para agentes no backend
+Hoje, os defaults efetivos são:
 
-Se você (Codex) estiver trabalhando no backend para atender este front:
+* candidates → `Candidaturas`
+* companies → `Empresas`
+* users → `Usuarios`
+* jobs → `Vagas`
 
-- Priorize funcionamento de:
-  - `GET /api/jobs`
-  - `POST /api/jobs`
-  - `POST /api/candidates`
-  - `GET /api/zips/:zip`
-- Aceite payloads com nomenclatura atual do front (snake_case PT-BR em boa parte).
-- Retorne erros com JSON simples e mensagem legível.
-- Em `GET /jobs`, pode retornar coleção em `data` ou array direto (front suporta ambos).
-- Sempre que possível inclua `cidade` e `estado` para melhorar exibição de localização.
+Ou seja, **na prática atual**, se as variáveis específicas não forem definidas, o código cai nesses nomes fixos.
 
+> Observação importante: embora `entityServiceFactory` tenha suporte a `TABLE_NAME`, esse fallback global **não é o caminho efetivo nas controllers atuais**, porque elas já passam um nome de tabela explícito vindo de `tableNames.js`.
+
+## 13) Execução local real
+
+1. Instalar dependências:
+
+```bash
+npm install
+```
+
+2. Subir localmente:
+
+```bash
+npm run dev
+# ou
+npm start
+```
+
+3. Porta padrão:
+
+* `PORT` default = `3000`
+
+## 14) Deploy real na AWS Lambda
+
+O handler exposto para Lambda é:
+
+* `lambdaHandler` em `src/handler.js`
+
+Ao empacotar e publicar:
+
+* use runtime Node.js 20.x (ou 22.x compatível)
+* aponte o handler para `src/handler.lambdaHandler` (ou equivalente no empacotamento, conforme a ferramenta)
+* garanta permissão de leitura/escrita nas tabelas DynamoDB utilizadas
+* configure `AWS_REGION` / `AWS_DEFAULT_REGION` se necessário
+
+## 15) O que este repositório NÃO tem hoje
+
+Para evitar suposições erradas, este repositório **não implementa**, no estado atual:
+
+* autenticação/autorização
+* integração com Cognito
+* front-end em Next.js
+* BFF do Next
+* rotas `PATCH`
+* testes automatizados
+* validação avançada de contratos
+* acesso por índices secundários (GSI/LSI) para listagens principais
+
+## 16) Diretrizes para agentes trabalhando neste repositório
+
+Se você estiver atuando neste código:
+
+1. Trate este projeto como **backend Express serverless**, não como front.
+2. Preserve o contrato real de respostas (`{ data: ... }`, `204` sem body, erros com `message`).
+3. Não assuma validações ricas já existentes; hoje elas são mínimas.
+4. Tenha atenção a custo/performance: listagens e filtros atuais fazem **Scan**.
+5. Se for evoluir escalabilidade, a principal oportunidade está em:
+
+   * modelagem de acesso por chave
+   * uso de GSIs
+   * evitar `Scan` para consultas frequentes
+6. Se for alterar tabelas/config, valide o impacto da resolução atual de nomes em `tableNames.js`.
+7. Não documente comportamento do front neste arquivo, a menos que o código do backend passe a depender explicitamente disso.
+
+## 17) Resumo executivo
+
+Este repositório é uma **API REST Node.js/Express para AWS Lambda**, com CRUD genérico em DynamoDB para:
+
+* candidatos
+* empresas
+* usuários
+* vagas
+* consulta de CEP via ViaCEP
+
+O desenho atual privilegia simplicidade e rapidez de implementação. O principal ponto de atenção arquitetural é que as listagens e filtros usam **scan**, o que funciona para baixo volume, mas pode aumentar custo e latência conforme a base crescer.
+   
