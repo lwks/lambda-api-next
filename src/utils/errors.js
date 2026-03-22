@@ -24,8 +24,28 @@ class ExternalServiceError extends Error {
   }
 }
 
+class UnauthorizedError extends Error {
+  constructor(message = 'Unauthorized', details) {
+    super(message);
+    this.name = 'UnauthorizedError';
+    this.statusCode = 401;
+    this.details = details;
+  }
+}
+
+class ForbiddenError extends Error {
+  constructor(message = 'Forbidden', details) {
+    super(message);
+    this.name = 'ForbiddenError';
+    this.statusCode = 403;
+    this.details = details;
+  }
+}
+
 module.exports = {
   NotFoundError,
   ValidationError,
   ExternalServiceError,
+  UnauthorizedError,
+  ForbiddenError,
 };
