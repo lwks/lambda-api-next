@@ -54,6 +54,41 @@ const swaggerDefinition = {
         },
         required: ['cd_cpf'],
       },
+      UserRegistrationRequest: {
+        type: 'object',
+        properties: {
+          fullName: { type: 'string', example: 'Mariana Costa' },
+          email: { type: 'string', format: 'email', example: 'mariana@clusterhr.com' },
+          password: { type: 'string', format: 'password', example: 'Senha123' },
+          role: {
+            type: 'string',
+            enum: ['candidate', 'recruiter', 'manager'],
+            example: 'candidate',
+          },
+          wantsJobAlerts: { type: 'boolean', example: true },
+          acceptTerms: { type: 'boolean', example: true },
+        },
+        required: ['fullName', 'email', 'password', 'role', 'acceptTerms'],
+      },
+      UserRegistrationResponse: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', example: 'registration-123' },
+          fullName: { type: 'string', example: 'Mariana Costa' },
+          email: { type: 'string', format: 'email', example: 'mariana@clusterhr.com' },
+          role: {
+            type: 'string',
+            enum: ['candidate', 'recruiter', 'manager'],
+            example: 'candidate',
+          },
+          wantsJobAlerts: { type: 'boolean', example: true },
+          status: { type: 'string', example: 'active' },
+          acceptTermsAcceptedAt: { type: 'string', format: 'date-time' },
+          registrationSource: { type: 'string', example: 'self-service' },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
       Job: {
         type: 'object',
         properties: {
@@ -508,6 +543,36 @@ const swaggerDefinition = {
             content: {
               'application/json': {
                 schema: { $ref: '#/components/schemas/User' },
+              },
+            },
+          },
+          400: { $ref: '#/components/responses/ValidationError' },
+        },
+      },
+    },
+    '/api/users/register': {
+      post: {
+        tags: ['Users'],
+        summary: 'Cria um cadastro de acesso para a tela publica de registro',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/UserRegistrationRequest' },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: 'Cadastro criado',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    data: { $ref: '#/components/schemas/UserRegistrationResponse' },
+                  },
+                },
               },
             },
           },
