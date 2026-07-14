@@ -18,6 +18,7 @@ const swaggerDefinition = {
     { name: 'Health' },
     { name: 'Candidates' },
     { name: 'Companies' },
+    { name: 'Domains' },
     { name: 'Users' },
     { name: 'Jobs' },
   ],
@@ -43,6 +44,18 @@ const swaggerDefinition = {
           email: { type: 'string', format: 'email', example: 'contato@acme.com' },
         },
         required: ['cd_cnpj'],
+      },
+      Domain: {
+        type: 'object',
+        properties: {
+          tipo: { type: 'string', example: 'DOMINIO#AREA_INTERESSE' },
+          codigo: { type: 'string', example: 'ITEM#tecnologia-informacao' },
+          code: { type: 'string', example: 'tecnologia-informacao' },
+          label: { type: 'string', example: 'Tecnologia da Informacao' },
+          active: { type: 'boolean', example: true },
+          sortOrder: { type: 'number', example: 1 },
+        },
+        required: ['tipo', 'code', 'label', 'active', 'sortOrder'],
       },
       User: {
         type: 'object',
@@ -446,6 +459,189 @@ const swaggerDefinition = {
         ],
         responses: {
           204: { $ref: '#/components/responses/NoContent' },
+          404: { $ref: '#/components/responses/NotFound' },
+        },
+      },
+    },
+    '/api/domains': {
+      get: {
+        tags: ['Domains'],
+        summary: 'Lista itens de dominio com paginação opcional',
+        parameters: [
+          {
+            in: 'query',
+            name: 'limit',
+            schema: { type: 'integer', minimum: 1, maximum: 100 },
+            description: 'Numero maximo de itens retornados (padrao 20)',
+          },
+          {
+            in: 'query',
+            name: 'lastKey',
+            schema: { type: 'string' },
+            description: 'Cursor de paginacao retornado em chamadas anteriores',
+          },
+          {
+            in: 'query',
+            name: 'tipo',
+            schema: { type: 'string' },
+            description: 'Filtra por grupo de dominio',
+          },
+          {
+            in: 'query',
+            name: 'active',
+            schema: { type: 'boolean' },
+            description: 'Filtra por status ativo',
+          },
+        ],
+        responses: {
+          200: {
+            description: 'Lista de dominios',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    data: {
+                      allOf: [
+                        { $ref: '#/components/schemas/PaginatedResponse' },
+                        {
+                          properties: {
+                            items: {
+                              type: 'array',
+                              items: { $ref: '#/components/schemas/Domain' },
+                            },
+                          },
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          },
+          400: { $ref: '#/components/responses/ValidationError' },
+        },
+      },
+      post: {
+        tags: ['Domains'],
+        summary: 'Cria um novo item de dominio',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/Domain' },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: 'Dominio criado',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Domain' },
+              },
+            },
+          },
+          400: { $ref: '#/components/responses/ValidationError' },
+        },
+      },
+      put: {
+        tags: ['Domains'],
+        summary: 'Atualiza um item de dominio pela chave tecnica',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                allOf: [
+                  { $ref: '#/components/schemas/Domain' },
+                  {
+                    required: ['tipo', 'codigo'],
+                  },
+                ],
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: 'Dominio atualizado',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Domain' },
+              },
+            },
+          },
+          400: { $ref: '#/components/responses/ValidationError' },
+          404: { $ref: '#/components/responses/NotFound' },
+        },
+      },
+    },
+    '/api/domains/{tipo}/{code}': {
+      get: {
+        tags: ['Domains'],
+        summary: 'Busca item de dominio por tipo e code',
+        parameters: [
+          {
+            in: 'path',
+            name: 'tipo',
+            required: true,
+            schema: { type: 'string' },
+          },
+          {
+            in: 'path',
+            name: 'code',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        responses: {
+          200: {
+            description: 'Dominio encontrado',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Domain' },
+              },
+            },
+          },
+          404: { $ref: '#/components/responses/NotFound' },
+        },
+      },
+      put: {
+        tags: ['Domains'],
+        summary: 'Atualiza item de dominio por tipo e code',
+        parameters: [
+          {
+            in: 'path',
+            name: 'tipo',
+            required: true,
+            schema: { type: 'string' },
+          },
+          {
+            in: 'path',
+            name: 'code',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/Domain' },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: 'Dominio atualizado',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Domain' },
+              },
+            },
+          },
+          400: { $ref: '#/components/responses/ValidationError' },
           404: { $ref: '#/components/responses/NotFound' },
         },
       },

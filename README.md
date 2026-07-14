@@ -5,7 +5,7 @@ API REST construída com Express e empacotada com `serverless-http` para execuç
 ## Requisitos
 
 - Node.js 20.x (compatível com 22.x)
-- Quatro tabelas DynamoDB com chave composta (`pk`, `sk`): `Empresas`, `Candidaturas`, `Usuarios` e `Vagas`
+- Cinco tabelas DynamoDB: `Empresas`, `Candidaturas`, `Usuarios`, `Vagas` e `Dominio`
 - Variáveis de ambiente para cada tabela ou, alternativamente, uma variável `TABLE_NAME` para fallback global
 - Configuração do Amazon Cognito para validação de JWT Bearer nas rotas protegidas
 
@@ -46,6 +46,7 @@ Para detalhes técnicos, consulte `src/services/entityServiceFactory.js`.
 ```bash
 export CANDIDATE_TABLE_NAME=Candidaturas
 export COMPANY_TABLE_NAME=Empresas
+export DOMAIN_TABLE_NAME=Dominio
 export USER_TABLE_NAME=Usuarios
 export JOB_TABLE_NAME=Vagas
 # opcional: use TABLE_NAME para fornecer um fallback comum
@@ -145,6 +146,11 @@ Todas as demais rotas sob `/api` exigem JWT Bearer válido do Cognito. Exemplos:
 - `POST /api/jobs`
 - `PUT /api/jobs/:id`
 - `DELETE /api/jobs/:id`
+- `GET /api/domains`
+- `GET /api/domains/:tipo/:code`
+- `POST /api/domains`
+- `PUT /api/domains`
+- `PUT /api/domains/:tipo/:code`
 - `POST /api/companies`
 - `GET /api/companies`
 - `GET /api/users`
@@ -255,6 +261,16 @@ GET /api/candidates/by-job-guids?guid_vaga=JOB-GUID-001,JOB-GUID-002
 | `PUT` | `/:id` | JWT | Atualiza usuário | Campos parciais |
 | `DELETE` | `/:id` | JWT | Remove usuário | — |
 
+### Dominios (`/api/domains`)
+
+| MÃ©todo | Rota | AutenticaÃ§Ã£o | DescriÃ§Ã£o | Body (JSON) |
+| --- | --- | --- | --- | --- |
+| `GET` | `/` | JWT | Lista dominios (`limit`, `lastKey`, `tipo`, `active`) | â€” |
+| `GET` | `/:tipo/:code` | JWT | Obtem item de dominio pela chave logica | â€” |
+| `POST` | `/` | JWT | Cria item de dominio | `{ "tipo": string, "code": string, "label": string, "active": boolean, "sortOrder": number, ... }` |
+| `PUT` | `/` | JWT | Atualiza item pela chave tecnica literal | `{ "tipo": string, "codigo": string, ... }` |
+| `PUT` | `/:tipo/:code` | JWT | Atualiza item pela chave logica | Campos parciais |
+
 ### Vagas (`/api/jobs`)
 
 | Método | Rota | Autenticação | Descrição | Body (JSON) |
@@ -319,7 +335,7 @@ npm run test:coverage
 
 ## Deploy na AWS Lambda
 
-1. Garanta que o pacote contenha `src/handler.js` e que as variáveis `CANDIDATE_TABLE_NAME`, `COMPANY_TABLE_NAME`, `USER_TABLE_NAME` e `JOB_TABLE_NAME` estejam configuradas na função Lambda (ou utilize `TABLE_NAME` como fallback global, se apropriado).
+1. Garanta que o pacote contenha `src/handler.js` e que as variáveis `CANDIDATE_TABLE_NAME`, `COMPANY_TABLE_NAME`, `DOMAIN_TABLE_NAME`, `USER_TABLE_NAME` e `JOB_TABLE_NAME` estejam configuradas na função Lambda (ou utilize `TABLE_NAME` como fallback global, se apropriado).
 2. Configure a runtime para **Node.js 20.x** (compatível com 22.x).
 3. Configure também as variáveis `COGNITO_REGION`, `COGNITO_USER_POOL_ID` e `COGNITO_APP_CLIENT_ID` na Lambda.
 4. Use qualquer ferramenta de empacotamento (SAM, Serverless Framework, AWS CDK) apontando para `handler.lambdaHandler`.

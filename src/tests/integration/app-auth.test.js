@@ -18,6 +18,14 @@ jest.mock('../../controllers/companyController', () => ({
   deleteCompany: (req, res) => res.status(204).send(),
 }));
 
+jest.mock('../../controllers/domainController', () => ({
+  createDomain: (req, res) => res.status(201).json({ data: { route: 'createDomain', auth: req.auth || null } }),
+  listDomains: (req, res) => res.json({ data: { route: 'listDomains', auth: req.auth || null } }),
+  getDomainByCode: (req, res) => res.json({ data: { route: 'getDomainByCode', auth: req.auth || null } }),
+  updateDomainByCode: (req, res) => res.json({ data: { route: 'updateDomainByCode', auth: req.auth || null } }),
+  updateDomainByKey: (req, res) => res.json({ data: { route: 'updateDomainByKey', auth: req.auth || null } }),
+}));
+
 jest.mock('../../controllers/candidateController', () => ({
   createCandidate: (req, res) => res.status(201).json({ data: { route: 'createCandidate' } }),
   listCandidates: (req, res) => res.json({ data: { route: 'listCandidates', auth: req.auth || null } }),
@@ -103,5 +111,31 @@ describe('app auth integration', () => {
       groups: ['admins'],
     });
     expect(verifyAccessToken).toHaveBeenCalledWith('valid-token');
+  });
+
+  it('protege GET /api/domains e retorna 401 sem bearer token', async () => {
+    const response = await request(app).get('/api/domains');
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({
+      message: 'Unauthorized',
+      details: { reason: 'missing_authorization_header' },
+    });
+  });
+
+  it('anexa auth em GET /api/domains com bearer token valido', async () => {
+    const response = await request(app)
+      .get('/api/domains')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toEqual({
+      route: 'listDomains',
+      auth: {
+        sub: 'user-1',
+        scope: ['jobs:write'],
+        groups: ['admins'],
+      },
+    });
   });
 });
