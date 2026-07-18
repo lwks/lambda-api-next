@@ -48,14 +48,13 @@ const swaggerDefinition = {
       Domain: {
         type: 'object',
         properties: {
-          tipo: { type: 'string', example: 'DOMINIO#AREA_INTERESSE' },
-          codigo: { type: 'string', example: 'ITEM#tecnologia-informacao' },
+          tipo: { type: 'string', example: 'TEC' },
           code: { type: 'string', example: 'tecnologia-informacao' },
           label: { type: 'string', example: 'Tecnologia da Informacao' },
           active: { type: 'boolean', example: true },
           sortOrder: { type: 'number', example: 1 },
         },
-        required: ['tipo', 'code', 'label', 'active', 'sortOrder'],
+        required: ['tipo', 'code', 'label'],
       },
       User: {
         type: 'object',
@@ -120,6 +119,7 @@ const swaggerDefinition = {
   },
   paths: {
     '/health': {
+    '/api/users': {
       get: {
         tags: ['Health'],
         summary: 'Verifica o status da API',
@@ -466,7 +466,7 @@ const swaggerDefinition = {
     '/api/domains': {
       get: {
         tags: ['Domains'],
-        summary: 'Lista itens de dominio com paginação opcional',
+        summary: 'Lista competencias de um grupo no SQL Server',
         parameters: [
           {
             in: 'query',
@@ -476,21 +476,16 @@ const swaggerDefinition = {
           },
           {
             in: 'query',
-            name: 'lastKey',
-            schema: { type: 'string' },
-            description: 'Cursor de paginacao retornado em chamadas anteriores',
-          },
-          {
-            in: 'query',
             name: 'tipo',
+            required: true,
             schema: { type: 'string' },
-            description: 'Filtra por grupo de dominio',
+            description: 'Codigo do grupo de competencia consultado no SQL Server',
           },
           {
             in: 'query',
             name: 'active',
             schema: { type: 'boolean' },
-            description: 'Filtra por status ativo',
+            description: 'Filtra por status ativo quando houver coluna configurada no mapping',
           },
         ],
         responses: {
@@ -524,63 +519,23 @@ const swaggerDefinition = {
       },
       post: {
         tags: ['Domains'],
-        summary: 'Cria um novo item de dominio',
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: { $ref: '#/components/schemas/Domain' },
-            },
-          },
-        },
+        summary: 'Nao suportado durante a migracao para SQL Server',
         responses: {
-          201: {
-            description: 'Dominio criado',
-            content: {
-              'application/json': {
-                schema: { $ref: '#/components/schemas/Domain' },
-              },
-            },
-          },
-          400: { $ref: '#/components/responses/ValidationError' },
+          501: { $ref: '#/components/responses/ValidationError' },
         },
       },
       put: {
         tags: ['Domains'],
-        summary: 'Atualiza um item de dominio pela chave tecnica',
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                allOf: [
-                  { $ref: '#/components/schemas/Domain' },
-                  {
-                    required: ['tipo', 'codigo'],
-                  },
-                ],
-              },
-            },
-          },
-        },
+        summary: 'Nao suportado durante a migracao para SQL Server',
         responses: {
-          200: {
-            description: 'Dominio atualizado',
-            content: {
-              'application/json': {
-                schema: { $ref: '#/components/schemas/Domain' },
-              },
-            },
-          },
-          400: { $ref: '#/components/responses/ValidationError' },
-          404: { $ref: '#/components/responses/NotFound' },
+          501: { $ref: '#/components/responses/ValidationError' },
         },
       },
     },
     '/api/domains/{tipo}/{code}': {
       get: {
         tags: ['Domains'],
-        summary: 'Busca item de dominio por tipo e code',
+        summary: 'Busca uma competencia por grupo e code',
         parameters: [
           {
             in: 'path',
@@ -609,7 +564,7 @@ const swaggerDefinition = {
       },
       put: {
         tags: ['Domains'],
-        summary: 'Atualiza item de dominio por tipo e code',
+        summary: 'Nao suportado durante a migracao para SQL Server',
         parameters: [
           {
             in: 'path',
@@ -624,29 +579,11 @@ const swaggerDefinition = {
             schema: { type: 'string' },
           },
         ],
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: { $ref: '#/components/schemas/Domain' },
-            },
-          },
-        },
         responses: {
-          200: {
-            description: 'Dominio atualizado',
-            content: {
-              'application/json': {
-                schema: { $ref: '#/components/schemas/Domain' },
-              },
-            },
-          },
-          400: { $ref: '#/components/responses/ValidationError' },
-          404: { $ref: '#/components/responses/NotFound' },
+          501: { $ref: '#/components/responses/ValidationError' },
         },
       },
     },
-    '/api/users': {
       get: {
         tags: ['Users'],
         summary: 'Lista usuários com paginação opcional',

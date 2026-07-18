@@ -1,167 +1,110 @@
-jest.mock('../../aws_services/dynamoClient', () => ({
-  documentClient: {
-    send: jest.fn(),
+jest.mock('../../sql/sqlServerClient', () => ({
+  getPool: jest.fn(),
+  sql: {
+    Int: 'Int',
+    NVarChar: 'NVarChar',
+    Bit: 'Bit',
   },
+  testConnection: jest.fn(),
 }));
 
-const {
-  GetCommand,
-  PutCommand,
-  QueryCommand,
-  ScanCommand,
-  UpdateCommand,
-} = require('@aws-sdk/lib-dynamodb');
-const { documentClient } = require('../../aws_services/dynamoClient');
-const { NotFoundError } = require('../../utils/errors');
+const { getPool, testConnection } = require('../../sql/sqlServerClient');
+const { NotFoundError, ValidationError } = require('../../utils/errors');
 const domainService = require('../../services/domainService');
 
 describe('domainService', () => {
+  let request;
+  let pool;
+
   beforeEach(() => {
     jest.clearAllMocks();
-  });
+    process.env.SQLSERVER_DOMAIN_TYPE_CODE_COLUMN = 'TIPO_CODE';
+    process.env.SQLSERVER_DOMAIN_TYPE_LABEL_COLUMN = 'TIPO_LABEL';
+    process.env.SQLSERVER_DOMAIN_ITEM_TYPE_CODE_COLUMN = 'TIPO_CODE';
+    process.env.SQLSERVER_DOMAIN_ITEM_CODE_COLUMN = 'COMP_CODE';
+    process.env.SQLSERVER_DOMAIN_ITEM_LABEL_COLUMN = 'COMP_LABEL';
+    delete process.env.SQLSERVER_DOMAIN_ITEM_ACTIVE_COLUMN;
+    delete process.env.SQLSERVER_DOMAIN_ITEM_SORT_COLUMN;
 
-  it('gera codigo tecnico no insert', async () => {
-    documentClient.send.mockResolvedValue({});
-
-    const payload = {
-      tipo: 'DOMINIO#AREA_INTERESSE',
-      code: 'tecnologia-informacao',
-      label: 'Tecnologia da Informacao',
-      active: true,
-      sortOrder: 1,
-      extra: 'value',
+    request = {
+      input: jest.fn().mockReturnThis(),
+      query: jest.fn(),
     };
-
-    const result = await domainService.create(payload);
-
-    expect(documentClient.send).toHaveBeenCalledTimes(1);
-    const command = documentClient.send.mock.calls[0][0];
-    expect(command).toBeInstanceOf(PutCommand);
-    expect(command.input.TableName).toBe('Dominio');
-    expect(command.input.Item).toEqual({
-      ...payload,
-      codigo: 'ITEM#tecnologia-informacao',
-    });
-    expect(result.codigo).toBe('ITEM#tecnologia-informacao');
+    pool = {
+      request: jest.fn(() => request),
+    };
+    getPool.mockResolvedValue(pool);
   });
 
-  it('consulta por tipo e code', async () => {
-    documentClient.send.mockResolvedValue({
-      Item: {
-        tipo: 'DOMINIO#AREA_INTERESSE',
-        codigo: 'ITEM#qa',
-        label: 'QA',
-      },
+  it('exige tipo na listagem', async () => {
+    await expect(domainService.list({ limit: 10 })).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('lista dominios via SQL Server por grupo', async () => {
+    request.query.mockResolvedValue({
+      recordset: [
+        {
+          domain_tipo: 'TEC',
+          domain_code: 'qa',
+          domain_label: 'QA',
+        },
+      ],
     });
 
-    const result = await domainService.findByCode('DOMINIO#AREA_INTERESSE', 'qa');
+    const result = await domainService.list({ tipo: 'TEC', limit: 10 });
 
-    const command = documentClient.send.mock.calls[0][0];
-    expect(command).toBeInstanceOf(GetCommand);
-    expect(command.input.Key).toEqual({
-      tipo: 'DOMINIO#AREA_INTERESSE',
-      codigo: 'ITEM#qa',
-    });
+    expect(getPool).toHaveBeenCalledTimes(1);
+    expect(request.input).toHaveBeenCalledWith('limit', 'Int', 10);
+    expect(request.input).toHaveBeenCalledWith('tipo', 'NVarChar', 'TEC');
     expect(result).toEqual({
-      tipo: 'DOMINIO#AREA_INTERESSE',
-      codigo: 'ITEM#qa',
+      items: [{ tipo: 'TEC', code: 'qa', label: 'QA' }],
+      lastEvaluatedKey: null,
+    });
+  });
+
+  it('consulta por tipo e code via SQL Server', async () => {
+    process.env.SQLSERVER_DOMAIN_ITEM_ACTIVE_COLUMN = 'ACTIVE';
+    process.env.SQLSERVER_DOMAIN_ITEM_SORT_COLUMN = 'SORT_ORDER';
+    request.query.mockResolvedValue({
+      recordset: [
+        {
+          domain_tipo: 'TEC',
+          domain_code: 'qa',
+          domain_label: 'QA',
+          domain_active: 1,
+          domain_sort_order: 7,
+        },
+      ],
+    });
+
+    const result = await domainService.findByCode('TEC', 'qa');
+
+    expect(request.input).toHaveBeenCalledWith('code', 'NVarChar', 'qa');
+    expect(result).toEqual({
+      tipo: 'TEC',
       code: 'qa',
       label: 'QA',
-    });
-  });
-
-  it('retorna not found em GetByCod ausente', async () => {
-    documentClient.send.mockResolvedValue({});
-
-    await expect(domainService.findByCode('DOMINIO#AREA_INTERESSE', 'qa')).rejects.toBeInstanceOf(NotFoundError);
-  });
-
-  it('usa query quando tipo e informado e filtra por active', async () => {
-    documentClient.send.mockResolvedValue({
-      Items: [{ tipo: 'DOMINIO#AREA_INTERESSE', codigo: 'ITEM#qa', active: true }],
-      LastEvaluatedKey: { tipo: 'DOMINIO#AREA_INTERESSE', codigo: 'ITEM#qa' },
-    });
-
-    const result = await domainService.list({
-      tipo: 'DOMINIO#AREA_INTERESSE',
       active: true,
-      limit: 10,
-      lastKey: { tipo: 'DOMINIO#AREA_INTERESSE', codigo: 'ITEM#dev' },
+      sortOrder: 7,
     });
-
-    const command = documentClient.send.mock.calls[0][0];
-    expect(command).toBeInstanceOf(QueryCommand);
-    expect(command.input.KeyConditionExpression).toBe('#tipo = :tipo');
-    expect(command.input.FilterExpression).toBe('#active = :active');
-    expect(command.input.ExpressionAttributeValues).toEqual({
-      ':tipo': 'DOMINIO#AREA_INTERESSE',
-      ':active': true,
-    });
-    expect(result.lastEvaluatedKey).toEqual({ tipo: 'DOMINIO#AREA_INTERESSE', codigo: 'ITEM#qa' });
   });
 
-  it('usa scan quando tipo nao e informado', async () => {
-    documentClient.send.mockResolvedValue({
-      Items: [{ tipo: 'DOMINIO#AREA_INTERESSE', codigo: 'ITEM#qa' }],
-    });
+  it('retorna not found quando nao acha item por code', async () => {
+    request.query.mockResolvedValue({ recordset: [] });
 
-    await domainService.list({ active: false, limit: 5 });
-
-    const command = documentClient.send.mock.calls[0][0];
-    expect(command).toBeInstanceOf(ScanCommand);
-    expect(command.input.FilterExpression).toBe('#active = :active');
-    expect(command.input.ExpressionAttributeValues).toEqual({ ':active': false });
-    expect(command.input.Limit).toBe(5);
+    await expect(domainService.findByCode('TEC', 'qa')).rejects.toBeInstanceOf(NotFoundError);
   });
 
-  it('atualiza por code usando chave tecnica derivada', async () => {
-    documentClient.send.mockResolvedValue({
-      Attributes: {
-        tipo: 'DOMINIO#AREA_INTERESSE',
-        codigo: 'ITEM#qa',
-        label: 'QA',
-        active: false,
-      },
-    });
-
-    const result = await domainService.updateByCode('DOMINIO#AREA_INTERESSE', 'qa', {
-      label: 'QA',
-      active: false,
-      code: 'outro-valor',
-    });
-
-    const command = documentClient.send.mock.calls[0][0];
-    expect(command).toBeInstanceOf(UpdateCommand);
-    expect(command.input.Key).toEqual({
-      tipo: 'DOMINIO#AREA_INTERESSE',
-      codigo: 'ITEM#qa',
-    });
-    expect(command.input.UpdateExpression).toBe('SET #field0 = :value0, #field1 = :value1');
-    expect(command.input.ExpressionAttributeNames).toEqual({
-      '#field0': 'label',
-      '#field1': 'active',
-      '#tipo': 'tipo',
-      '#codigo': 'codigo',
-    });
-    expect(result.code).toBe('qa');
+  it('rejeita filtro active sem coluna configurada', async () => {
+    await expect(domainService.list({ tipo: 'TEC', active: true })).rejects.toBeInstanceOf(ValidationError);
   });
 
-  it('retorna item atual quando update tecnico nao recebe campos mutaveis', async () => {
-    documentClient.send.mockResolvedValue({
-      Item: {
-        tipo: 'DOMINIO#AREA_INTERESSE',
-        codigo: 'ITEM#qa',
-        label: 'QA',
-      },
-    });
+  it('delegates ping to sql client connection test', async () => {
+    testConnection.mockResolvedValue(true);
 
-    const result = await domainService.updateByKey('DOMINIO#AREA_INTERESSE', 'ITEM#qa', {
-      tipo: 'DOMINIO#AREA_INTERESSE',
-      codigo: 'ITEM#qa',
-    });
+    const result = await domainService.ping();
 
-    const command = documentClient.send.mock.calls[0][0];
-    expect(command).toBeInstanceOf(GetCommand);
-    expect(result.code).toBe('qa');
+    expect(result).toBe(true);
+    expect(testConnection).toHaveBeenCalledTimes(1);
   });
 });

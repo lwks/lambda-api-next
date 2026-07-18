@@ -42,10 +42,20 @@ class ForbiddenError extends Error {
   }
 }
 
+class NotImplementedError extends Error {
+  constructor(message = 'Not implemented', details) {
+    super(message);
+    this.name = 'NotImplementedError';
+    this.statusCode = 501;
+    this.details = details;
+  }
+}
+
 module.exports = {
   NotFoundError,
   ValidationError,
   ExternalServiceError,
   UnauthorizedError,
   ForbiddenError,
+  NotImplementedError,
 };

@@ -1,11 +1,12 @@
 # Lambda API Next
 
-API REST construída com Express e empacotada com `serverless-http` para execução em AWS Lambda. A aplicação usa DynamoDB (AWS SDK v3) como camada de persistência e organiza a lógica em camadas de controllers, services, utilitários e middlewares reutilizáveis.
+API REST construída com Express e empacotada com `serverless-http` para execução em AWS Lambda. A aplicação usa DynamoDB (AWS SDK v3) como camada principal de persistência e SQL Server para leitura de domínios de competências.
 
 ## Requisitos
 
 - Node.js 20.x (compatível com 22.x)
-- Cinco tabelas DynamoDB: `Empresas`, `Candidaturas`, `Usuarios`, `Vagas` e `Dominio`
+- Quatro tabelas DynamoDB: `Empresas`, `Candidaturas`, `Usuarios` e `Vagas`
+- SQL Server para leitura dos dominios em `TB_TIPO_COMPETENCIAS` e `TB_COMPETENCIAS`
 - Variáveis de ambiente para cada tabela ou, alternativamente, uma variável `TABLE_NAME` para fallback global
 - Configuração do Amazon Cognito para validação de JWT Bearer nas rotas protegidas
 
@@ -46,13 +47,34 @@ Para detalhes técnicos, consulte `src/services/entityServiceFactory.js`.
 ```bash
 export CANDIDATE_TABLE_NAME=Candidaturas
 export COMPANY_TABLE_NAME=Empresas
-export DOMAIN_TABLE_NAME=Dominio
 export USER_TABLE_NAME=Usuarios
 export JOB_TABLE_NAME=Vagas
 # opcional: use TABLE_NAME para fornecer um fallback comum
 export AWS_REGION=us-east-1
 ```
 
+
+### SQL Server (`/api/domains`)
+
+```bash
+export SQLSERVER_HOST=sqlserver.example.local
+export SQLSERVER_PORT=1433
+export SQLSERVER_DATABASE=MeuBanco
+export SQLSERVER_USER=app_user
+export SQLSERVER_PASSWORD=senha
+export SQLSERVER_ENCRYPT=true
+export SQLSERVER_TRUST_SERVER_CERTIFICATE=false
+export SQLSERVER_DOMAIN_TYPE_TABLE=TB_TIPO_COMPETENCIAS
+export SQLSERVER_DOMAIN_ITEM_TABLE=TB_COMPETENCIAS
+export SQLSERVER_DOMAIN_TYPE_CODE_COLUMN=<coluna_codigo_tipo>
+export SQLSERVER_DOMAIN_TYPE_LABEL_COLUMN=<coluna_label_tipo>
+export SQLSERVER_DOMAIN_ITEM_TYPE_CODE_COLUMN=<coluna_fk_tipo>
+export SQLSERVER_DOMAIN_ITEM_CODE_COLUMN=<coluna_codigo_competencia>
+export SQLSERVER_DOMAIN_ITEM_LABEL_COLUMN=<coluna_label_competencia>
+# opcionais
+export SQLSERVER_DOMAIN_ITEM_ACTIVE_COLUMN=<coluna_ativo>
+export SQLSERVER_DOMAIN_ITEM_SORT_COLUMN=<coluna_ordenacao>
+```
 ### Amazon Cognito JWT
 
 > A API usa **`access_token`** como padrão para autorização. O backend **não implementa login/logout/callback**: ele apenas valida o JWT Bearer enviado nas rotas protegidas.
@@ -265,11 +287,11 @@ GET /api/candidates/by-job-guids?guid_vaga=JOB-GUID-001,JOB-GUID-002
 
 | MÃ©todo | Rota | AutenticaÃ§Ã£o | DescriÃ§Ã£o | Body (JSON) |
 | --- | --- | --- | --- | --- |
-| `GET` | `/` | JWT | Lista dominios (`limit`, `lastKey`, `tipo`, `active`) | â€” |
-| `GET` | `/:tipo/:code` | JWT | Obtem item de dominio pela chave logica | â€” |
-| `POST` | `/` | JWT | Cria item de dominio | `{ "tipo": string, "code": string, "label": string, "active": boolean, "sortOrder": number, ... }` |
-| `PUT` | `/` | JWT | Atualiza item pela chave tecnica literal | `{ "tipo": string, "codigo": string, ... }` |
-| `PUT` | `/:tipo/:code` | JWT | Atualiza item pela chave logica | Campos parciais |
+| `GET` | `/?tipo=...` | JWT | Lista competencias do grupo informado no SQL Server (`limit`, `active`) | - |
+| `GET` | `/:tipo/:code` | JWT | Obtem uma competencia especifica pelo grupo e code | - |
+| `POST` | `/` | JWT | Nao suportado durante a migracao para SQL Server | - |
+| `PUT` | `/` | JWT | Nao suportado durante a migracao para SQL Server | - |
+| `PUT` | `/:tipo/:code` | JWT | Nao suportado durante a migracao para SQL Server | - |
 
 ### Vagas (`/api/jobs`)
 
@@ -335,8 +357,8 @@ npm run test:coverage
 
 ## Deploy na AWS Lambda
 
-1. Garanta que o pacote contenha `src/handler.js` e que as variáveis `CANDIDATE_TABLE_NAME`, `COMPANY_TABLE_NAME`, `DOMAIN_TABLE_NAME`, `USER_TABLE_NAME` e `JOB_TABLE_NAME` estejam configuradas na função Lambda (ou utilize `TABLE_NAME` como fallback global, se apropriado).
+1. Garanta que o pacote contenha `src/handler.js` e que as variaveis `CANDIDATE_TABLE_NAME`, `COMPANY_TABLE_NAME`, `USER_TABLE_NAME` e `JOB_TABLE_NAME` estejam configuradas na funcao Lambda (ou utilize `TABLE_NAME` como fallback global, se apropriado).
 2. Configure a runtime para **Node.js 20.x** (compatível com 22.x).
-3. Configure também as variáveis `COGNITO_REGION`, `COGNITO_USER_POOL_ID` e `COGNITO_APP_CLIENT_ID` na Lambda.
+3. Configure tambem as variaveis `COGNITO_REGION`, `COGNITO_USER_POOL_ID`, `COGNITO_APP_CLIENT_ID` e `SQLSERVER_*` na Lambda.
 4. Use qualquer ferramenta de empacotamento (SAM, Serverless Framework, AWS CDK) apontando para `handler.lambdaHandler`.
-5. Conceda permissões de leitura/escrita na tabela DynamoDB configurada.
+5. Conceda permissoes de leitura/escrita nas tabelas DynamoDB configuradas e acesso de rede ao SQL Server.
