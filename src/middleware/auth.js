@@ -2,6 +2,7 @@ const { verifyAccessToken } = require('../auth/cognitoVerifier');
 const { UnauthorizedError } = require('../utils/errors');
 
 const DEFAULT_PUBLIC_ROUTES = [
+  { method: 'GET', pattern: /^\/areas$/ },
   { method: 'GET', pattern: /^\/jobs(?:\/[^/]+)?$/ },
   { method: 'POST', pattern: /^\/candidates$/ },
   { method: 'GET', pattern: /^\/zips\/[^/]+$/ },

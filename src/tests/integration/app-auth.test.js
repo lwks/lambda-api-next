@@ -10,6 +10,10 @@ jest.mock('../../controllers/jobController', () => ({
   deleteJob: (req, res) => res.status(204).send(),
 }));
 
+jest.mock('../../controllers/areaController', () => ({
+  listAreas: (req, res) => res.json({ data: [{ ID: 1, DS_AREA: 'Tecnologia' }] }),
+}));
+
 jest.mock('../../controllers/companyController', () => ({
   createCompany: (req, res) => res.status(201).json({ data: { route: 'createCompany', auth: req.auth || null } }),
   listCompanies: (req, res) => res.json({ data: { route: 'listCompanies', auth: req.auth || null } }),
@@ -78,6 +82,14 @@ describe('app auth integration', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.data).toEqual({ route: 'listJobs' });
+    expect(verifyAccessToken).not.toHaveBeenCalled();
+  });
+
+  it('mantém GET /api/areas público', async () => {
+    const response = await request(app).get('/api/areas');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ data: [{ ID: 1, DS_AREA: 'Tecnologia' }] });
     expect(verifyAccessToken).not.toHaveBeenCalled();
   });
 

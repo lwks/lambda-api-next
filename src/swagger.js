@@ -18,6 +18,7 @@ const swaggerDefinition = {
     { name: 'Health' },
     { name: 'Candidates' },
     { name: 'Companies' },
+    { name: 'Areas' },
     { name: 'Domains' },
     { name: 'Users' },
     { name: 'Jobs' },
@@ -44,6 +45,14 @@ const swaggerDefinition = {
           email: { type: 'string', format: 'email', example: 'contato@acme.com' },
         },
         required: ['cd_cnpj'],
+      },
+      Area: {
+        type: 'object',
+        properties: {
+          ID: { type: 'integer', example: 1 },
+          DS_AREA: { type: 'string', example: 'Finanças' },
+        },
+        required: ['ID', 'DS_AREA'],
       },
       Domain: {
         type: 'object',
@@ -460,6 +469,31 @@ const swaggerDefinition = {
         responses: {
           204: { $ref: '#/components/responses/NoContent' },
           404: { $ref: '#/components/responses/NotFound' },
+        },
+      },
+    },
+    '/api/areas': {
+      get: {
+        tags: ['Areas'],
+        summary: 'Lista as areas disponiveis',
+        responses: {
+          200: {
+            description: 'Lista de areas',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['data'],
+                  properties: {
+                    data: {
+                      type: 'array',
+                      items: { $ref: '#/components/schemas/Area' },
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     },

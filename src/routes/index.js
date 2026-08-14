@@ -1,4 +1,5 @@
 const express = require('express');
+const areaRoutes = require('./areaRoutes');
 const candidateRoutes = require('./candidateRoutes');
 const companyRoutes = require('./companyRoutes');
 const domainRoutes = require('./domainRoutes');
@@ -12,6 +13,7 @@ const authGuard = createAuthGuard();
 
 router.use(authGuard);
 router.use('/candidates', candidateRoutes);
+router.use('/areas', areaRoutes);
 router.use('/companies', companyRoutes);
 router.use('/domains', domainRoutes);
 router.use('/users', userRoutes);

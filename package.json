@@ -8,6 +8,7 @@
     "dev": "node src/local.js",
     "lint": "echo 'No lint step configured'",
     "test": "jest --runInBand",
+    "export:tb-areas": "node scripts/export-tb-areas.js",
     "test:coverage": "jest --runInBand --coverage"
   },
   "keywords": [
