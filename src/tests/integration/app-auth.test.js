@@ -11,7 +11,7 @@ jest.mock('../../controllers/jobController', () => ({
 }));
 
 jest.mock('../../controllers/areaController', () => ({
-  listAreas: (req, res) => res.json({ data: [{ ID: 1, DS_AREA: 'Tecnologia' }] }),
+  listAreas: (req, res) => res.json({ data: [{ ID: 1, DS_AREA: 'Tecnologia', competencias: [] }] }),
 }));
 
 jest.mock('../../controllers/companyController', () => ({
@@ -89,7 +89,7 @@ describe('app auth integration', () => {
     const response = await request(app).get('/api/areas');
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ data: [{ ID: 1, DS_AREA: 'Tecnologia' }] });
+    expect(response.body).toEqual({ data: [{ ID: 1, DS_AREA: 'Tecnologia', competencias: [] }] });
     expect(verifyAccessToken).not.toHaveBeenCalled();
   });
 

@@ -18,13 +18,14 @@ describe('areaController', () => {
   beforeEach(() => jest.clearAllMocks());
 
   it('retorna ID e DS_AREA no envelope data', async () => {
-    areaService.list.mockResolvedValue([{ ID: 1, DS_AREA: 'Tecnologia' }]);
+    const areas = [{ ID: 1, DS_AREA: 'Tecnologia', competencias: [] }];
+    areaService.list.mockResolvedValue(areas);
     const res = createResponse();
     const next = jest.fn();
 
     await listAreas({}, res, next);
 
-    expect(res.body).toEqual({ data: [{ ID: 1, DS_AREA: 'Tecnologia' }] });
+    expect(res.body).toEqual({ data: areas });
     expect(next).not.toHaveBeenCalled();
   });
 
