@@ -362,3 +362,15 @@ npm run test:coverage
 3. Configure tambem as variaveis `COGNITO_REGION`, `COGNITO_USER_POOL_ID`, `COGNITO_APP_CLIENT_ID` e `SQLSERVER_*` na Lambda.
 4. Use qualquer ferramenta de empacotamento (SAM, Serverless Framework, AWS CDK) apontando para `handler.lambdaHandler`.
 5. Conceda permissoes de leitura/escrita nas tabelas DynamoDB configuradas e acesso de rede ao SQL Server.
+
+### GitHub Actions
+
+O workflow em `.github/workflows/ci.yml` executa `npm ci` e `npm test` em pull requests para `develop`. Após um push em `develop`, o mesmo gate de testes é executado antes do deploy automático da Lambda de desenvolvimento.
+
+O deploy usa GitHub OIDC para assumir uma role AWS temporária. Configure no repositório ou no environment `development`:
+
+- região configurada: `us-east-1`;
+- função Lambda configurada: `lambda_api`;
+- secret `AWS_ROLE_ARN`: ARN da role IAM confiada pelo provedor OIDC do GitHub.
+
+A role deve permitir `lambda:UpdateFunctionCode` apenas na função de desenvolvimento. O pacote publicado contém `src/handler.js`, `src/` e as dependências de produção; o handler permanece `src/handler.lambdaHandler`.
