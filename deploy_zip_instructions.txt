@@ -32,6 +32,7 @@ A partir da raiz do projeto, compacte todo o conteúdo relevante (código-fonte,
 
 ```
 zip -r lambda-api.zip src package.json package-lock.json node_modules README.md
+tar.exe 
 ```
 
 > Ajuste o nome do arquivo se preferir outro identificador para a versão/ambiente.

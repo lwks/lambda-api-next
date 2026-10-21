@@ -1,15 +1,15 @@
-# Lambda API Next
+# AGENTS.md — Guia real do repositório `lambda-api-next`
 
 API REST construída com Express e empacotada com `serverless-http` para execução em AWS Lambda. A aplicação usa DynamoDB (AWS SDK v3) como camada de persistência e organiza a lógica em camadas de controllers, services, utilitários e middlewares reutilizáveis.
 
-## Requisitos
+## 1) Escopo real do repositório
 
 - Node.js 20.x (compatível com 22.x)
 - Quatro tabelas DynamoDB com chave composta (`pk`, `sk`): `Empresas`, `Candidaturas`, `Usuarios` e `Vagas`
 - Variáveis de ambiente para cada tabela ou, alternativamente, uma variável `TABLE_NAME` para fallback global
 - Configuração do Amazon Cognito para validação de JWT Bearer nas rotas protegidas
 
-## Estrutura do projeto
+Ele **não** contém o front-end em Next.js. O nome do repositório inclui `next`, mas a base atual é um backend JavaScript/CommonJS com rotas HTTP, controllers e integração com DynamoDB.
 
 ```text
 src/
@@ -29,15 +29,19 @@ src/
 └── utils/                  # Utilitários (erros, responses, paginação, validação)
 ```
 
-## Formato dos itens persistidos
+## 4) Comportamento HTTP real da aplicação
 
-Os itens gravados no DynamoDB seguem o padrão abaixo:
+### Endpoints fora de `/api`
 
-- **Chaves:** `pk` = `ENTITY#<id>`, `sk` = `ENTITY`.
-- **Campos gerados automaticamente:** `id` (UUID), `entityType`, `createdAt`, `updatedAt`.
-- **Payload mesclado:** o payload enviado pelo cliente é mesclado com esses campos antes da persistência.
+* `GET /health` → retorna `{ "status": "ok" }`
+* `GET /docs` → Swagger UI
+* `GET /docs.json` → OpenAPI em JSON
 
-Para detalhes técnicos, consulte `src/services/entityServiceFactory.js`.
+### Prefixo principal da API
+
+Todas as rotas de negócio ficam sob **`/api`**.
+
+## 5) Rotas reais expostas
 
 ## Variáveis de ambiente
 
@@ -99,15 +103,15 @@ Quando o token é validado com sucesso, a API anexa no request/contexto autentic
 2. Exporte as variáveis de ambiente necessárias de DynamoDB e Cognito.
 3. Rode o servidor local:
 
-   ```bash
-   npm run dev
-   # ou
-   npm start
-   ```
+### `/api/companies`
 
-4. A API ficará acessível em `http://localhost:3000`.
+* `POST /api/companies`
+* `GET /api/companies`
+* `GET /api/companies/:id`
+* `PUT /api/companies/:id`
+* `DELETE /api/companies/:id`
 
-> **Nota:** O runner local usa Express puro. Em produção a Lambda chamará `handler.lambdaHandler` definido em `src/handler.js`.
+**Campo mínimo exigido no create:**
 
 ## Autenticação e autorização
 
@@ -203,16 +207,23 @@ Exemplo para grupos:
 
 Todos os endpoints são versionados sob `/api`.
 
-### Documentação
+* `POST /api/users`
+* `GET /api/users`
+* `GET /api/users/:id`
+* `PUT /api/users/:id`
+* `DELETE /api/users/:id`
 
-- `GET /docs` — Swagger UI.
-- `GET /docs.json` — JSON OpenAPI.
+**Campo mínimo exigido no create:**
 
 ### Saúde
 
-- `GET /health` — Verifica disponibilidade da aplicação.
+* `POST /api/jobs`
+* `GET /api/jobs`
+* `GET /api/jobs/:id`
+* `PUT /api/jobs/:id`
+* `DELETE /api/jobs/:id`
 
-### Candidatos (`/api/candidates`)
+**Campo mínimo exigido no create:**
 
 | Método | Rota | Autenticação | Descrição | Body (JSON) |
 | --- | --- | --- | --- | --- |
@@ -223,16 +234,18 @@ Todos os endpoints são versionados sob `/api`.
 | `PUT` | `/:id` | JWT | Atualiza candidato | Campos parciais |
 | `DELETE` | `/:id` | JWT | Remove candidato | — |
 
-#### Filtro por vagas (`GET /api/candidates/by-job-guids`)
+### `/api/zips`
 
-Este endpoint recebe `guid_vaga` na query string e retorna as candidaturas vinculadas.
+* `GET /api/zips/:zip`
 
-**Exemplos de query:**
+Consulta CEP brasileiro e retorna a localização como **string** formatada, encapsulada em `data`.
 
-```http
-GET /api/candidates/by-job-guids?guid_vaga=JOB-GUID-001
-GET /api/candidates/by-job-guids?guid_vaga=JOB-GUID-001&guid_vaga=JOB-GUID-002
-GET /api/candidates/by-job-guids?guid_vaga=JOB-GUID-001,JOB-GUID-002
+Exemplo de resposta:
+
+```json
+{
+  "data": "Rua X - Bairro Y - São Paulo/SP"
+}
 ```
 
 ### Empresas (`/api/companies`)
@@ -245,7 +258,7 @@ GET /api/candidates/by-job-guids?guid_vaga=JOB-GUID-001,JOB-GUID-002
 | `PUT` | `/:id` | JWT | Atualiza empresa | Campos parciais |
 | `DELETE` | `/:id` | JWT | Remove empresa | — |
 
-### Usuários (`/api/users`)
+### Validação de CEP
 
 | Método | Rota | Autenticação | Descrição | Body (JSON) |
 | --- | --- | --- | --- | --- |
@@ -255,7 +268,8 @@ GET /api/candidates/by-job-guids?guid_vaga=JOB-GUID-001,JOB-GUID-002
 | `PUT` | `/:id` | JWT | Atualiza usuário | Campos parciais |
 | `DELETE` | `/:id` | JWT | Remove usuário | — |
 
-### Vagas (`/api/jobs`)
+* `12345678`
+* `12345-678`
 
 | Método | Rota | Autenticação | Descrição | Body (JSON) |
 | --- | --- | --- | --- | --- |
@@ -265,30 +279,129 @@ GET /api/candidates/by-job-guids?guid_vaga=JOB-GUID-001,JOB-GUID-002
 | `PUT` | `/:id` | JWT | Atualiza vaga | Campos parciais |
 | `DELETE` | `/:id` | JWT | Remove vaga | — |
 
-### CEPs (`/api/zips`)
+## 7) Formato real de resposta
 
 | Método | Rota | Autenticação | Descrição | Body (JSON) |
 | --- | --- | --- | --- | --- |
 | `GET` | `/:zip` | Pública | Consulta cidade e estado a partir de um CEP brasileiro (8 dígitos, com ou sem hífen) | — |
 
-**Resposta de sucesso:**
+Respostas de sucesso usam o helper padrão:
+
+```json
+{ "data": ... }
+```
+
+### Criação
+
+Criações retornam:
+
+* **status `201`**
+* body no formato `{ "data": ... }`
+
+### Delete
+
+Deletes retornam:
+
+* **status `204`**
+* **sem body**
+
+### Erros
+
+Erros retornam:
+
+```json
+{ "message": "..." }
+```
+
+ou, quando houver detalhes:
+
+```json
+{ "message": "...", "details": { ... } }
+```
+
+## 8) CORS real
+
+O middleware global de CORS hoje aplica:
+
+* `Access-Control-Allow-Origin: *`
+* `Access-Control-Allow-Methods: GET,POST,PUT,DELETE,OPTIONS`
+* `Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With`
+
+Requests `OPTIONS` retornam **`204`** diretamente.
+
+> Observação importante: **`PATCH` não está liberado** no CORS e também **não existe rota PATCH**.
+
+## 9) Persistência real no DynamoDB
+
+A persistência é centralizada em `entityServiceFactory.js`.
+
+### Modelo de chave
+
+Todos os registros seguem:
+
+* `pk = <ENTITYTYPE>#<id>` em maiúsculas
+* `sk = ENTITY`
+
+Exemplos:
+
+* candidate → `pk = CANDIDATE#<id>`
+* company → `pk = COMPANY#<id>`
+* user → `pk = USER#<id>`
+* job → `pk = JOB#<id>`
+
+### Campos gerados automaticamente
+
+Ao criar um item, o backend acrescenta:
+
+* `id` (UUID, se não vier no payload)
+* `entityType`
+* `pk`
+* `sk`
+* `createdAt`
+* `updatedAt`
+
+### Update
+
+No update:
+
+* `id` e `entityType` não são sobrescritos pela expressão de update
+* `updatedAt` é sempre atualizado
+* se nenhum campo válido for enviado, a API apenas retorna o registro atual
+
+## 10) Paginação real
+
+Listagens de CRUD usam:
+
+* `limit` (default `20`, mínimo `1`, máximo `100`)
+* `lastKey` (token em Base64URL)
+
+O token recebido em `lastKey` é decodificado; se vier inválido, a API simplesmente ignora o token e segue sem cursor.
+
+Resposta típica de listagem:
 
 ```json
 {
-  "data": "Rua X - Bairro Y - São Paulo/SP"
+  "data": {
+    "items": [],
+    "lastKey": "..."
+  }
 }
 ```
 
 **Erros comuns:**
 
-- `400` — CEP inválido (formato diferente de 8 dígitos).
-- `404` — CEP não encontrado no serviço externo.
-- `502` — Falha ao consultar o serviço de CEP.
+* autenticação/autorização
+* integração com Cognito
+* front-end em Next.js
+* BFF do Next
+* rotas `PATCH`
+* testes automatizados
+* validação avançada de contratos
+* acesso por índices secundários (GSI/LSI) para listagens principais
 
 ## Paginação
 
-- Query `limit`: número máximo de itens (restrito de 1 a 100, padrão 20).
-- Query `lastKey`: token Base64URL retornado em listagens anteriores.
+Se você estiver atuando neste código:
 
 ## Respostas e erros
 
