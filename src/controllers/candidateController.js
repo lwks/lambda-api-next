@@ -10,7 +10,7 @@ const candidateService = createEntityService('candidate', TABLE_NAMES.candidate)
 
 async function createCandidate(req, res, next) {
   try {
-    logger.info('Received request to create candidate', { body: req.body });
+    logger.info('Received request to create candidate');
     logger.info('Validating required fields for candidate creation', { requiredFields: ['guid_id', 'guid_vaga'] });
     validateRequiredFields(req.body, ['guid_id', 'guid_vaga']);
     logger.info('Validation succeeded for candidate creation');
@@ -94,7 +94,7 @@ async function getCandidate(req, res, next) {
 
 async function updateCandidate(req, res, next) {
   try {
-    logger.info('Received request to update candidate', { params: req.params, body: req.body });
+    logger.info('Received request to update candidate', { params: req.params });
     const candidate = await candidateService.update(req.params.id, req.body);
     logger.info('Candidate updated in DynamoDB', { candidateId: candidate.id });
     return success(res, candidate);

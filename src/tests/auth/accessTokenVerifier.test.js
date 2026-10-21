@@ -7,12 +7,15 @@ jest.mock('aws-jwt-verify', () => ({
 const { CognitoJwtVerifier } = require('aws-jwt-verify');
 const {
   clearVerifierCache,
+  getAuthProvider,
   getCognitoConfig,
+  getSupabaseConfig,
   verifyAccessToken,
-} = require('../../auth/cognitoVerifier');
-const { ForbiddenError, UnauthorizedError } = require('../../utils/errors');
+  verifySupabaseAccessToken,
+} = require('../../auth/accessTokenVerifier');
+const { AuthConfigurationError, ExternalServiceError, ForbiddenError, UnauthorizedError } = require('../../utils/errors');
 
-describe('cognitoVerifier', () => {
+describe('accessTokenVerifier', () => {
   const env = {
     COGNITO_REGION: 'us-east-1',
     COGNITO_USER_POOL_ID: 'us-east-1_abc123',
@@ -101,7 +104,7 @@ describe('cognitoVerifier', () => {
     await expect(verifyAccessToken('invalid-token', { env })).rejects.toEqual(
       expect.objectContaining({
         statusCode: 401,
-        details: expect.objectContaining({ reason: 'invalid_token', error: 'JWT signature invalid' }),
+        details: { reason: 'invalid_token' },
       }),
     );
   });
@@ -115,9 +118,7 @@ describe('cognitoVerifier', () => {
   });
 
   it('gera erro de configuração quando variáveis obrigatórias do Cognito não existem', () => {
-    expect(() => getCognitoConfig({ COGNITO_REGION: 'us-east-1' })).toThrow(
-      'Missing Cognito configuration: COGNITO_USER_POOL_ID, COGNITO_APP_CLIENT_ID',
-    );
+    expect(() => getCognitoConfig({ COGNITO_REGION: 'us-east-1' })).toThrow(AuthConfigurationError);
   });
 
   it('não reconverte erros de autorização já classificados', async () => {
@@ -131,5 +132,86 @@ describe('cognitoVerifier', () => {
         },
       }),
     ).rejects.toBe(forbidden);
+  });
+
+  it('uses the Supabase publishable key and ignores service role credentials', () => {
+    expect(getSupabaseConfig({
+      NEXT_PUBLIC_SUPABASE_URL: 'https://project.supabase.co/',
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'publishable-key',
+      SUPABASE_SERVICE_ROLE_KEY: 'must-not-be-used',
+    })).toEqual({ url: 'https://project.supabase.co', apiKey: 'publishable-key' });
+    expect(getSupabaseConfig({ SUPABASE_SERVICE_ROLE_KEY: 'must-not-be-used' })).toBeNull();
+  });
+
+  it('selects the configured provider and rejects unknown provider names', () => {
+    expect(getAuthProvider({ AUTH_PROVIDER: 'supabase' })).toBe('supabase');
+    expect(getAuthProvider({ AUTH_PROVIDER: 'COGNITO' })).toBe('cognito');
+    expect(() => getAuthProvider({ AUTH_PROVIDER: 'unknown' })).toThrow(AuthConfigurationError);
+  });
+
+  it('validates a Supabase token and builds trusted account metadata', async () => {
+    const fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: 'company-1',
+        email: 'company@example.com',
+        app_metadata: { account_type: 'COMPANY' },
+        user_metadata: { account_type: 'CANDIDATE' },
+      }),
+    });
+
+    const auth = await verifySupabaseAccessToken('supabase-token', {
+      config: { url: 'https://project.supabase.co', apiKey: 'publishable-key' },
+      fetch,
+    });
+
+    expect(fetch).toHaveBeenCalledWith('https://project.supabase.co/auth/v1/user', {
+      method: 'GET',
+      headers: { apikey: 'publishable-key', Authorization: 'Bearer supabase-token' },
+    });
+    expect(auth).toEqual(expect.objectContaining({
+      sub: 'company-1',
+      accountType: 'COMPANY',
+      claims: expect.objectContaining({ app_metadata: { account_type: 'COMPANY' } }),
+    }));
+  });
+
+  it('returns 401 when Supabase rejects a token', async () => {
+    await expect(verifySupabaseAccessToken('bad-token', {
+      config: { url: 'https://project.supabase.co', apiKey: 'publishable-key' },
+      fetch: jest.fn().mockResolvedValue({ ok: false, status: 401 }),
+    })).rejects.toMatchObject({ statusCode: 401, details: { reason: 'invalid_token' } });
+  });
+
+  it('returns 503 when the selected Supabase provider lacks configuration', async () => {
+    await expect(verifyAccessToken('token', { env: { AUTH_PROVIDER: 'supabase' } }))
+      .rejects.toBeInstanceOf(AuthConfigurationError);
+  });
+
+  it('returns 502 when the authentication service is unavailable', async () => {
+    await expect(verifySupabaseAccessToken('token', {
+      config: { url: 'https://project.supabase.co', apiKey: 'publishable-key' },
+      fetch: jest.fn().mockRejectedValue(new Error('network error')),
+    })).rejects.toBeInstanceOf(ExternalServiceError);
+  });
+
+  it('selects Supabase before Cognito when Supabase is configured', async () => {
+    const fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 'company-1', app_metadata: { account_type: 'COMPANY' } }),
+    });
+
+    const auth = await verifyAccessToken('token', {
+      env: {
+        NEXT_PUBLIC_SUPABASE_URL: 'https://project.supabase.co',
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'publishable-key',
+      },
+      fetch,
+    });
+
+    expect(auth.accountType).toBe('COMPANY');
+    expect(CognitoJwtVerifier.create).not.toHaveBeenCalled();
   });
 });

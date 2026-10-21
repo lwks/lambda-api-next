@@ -27,29 +27,29 @@ function ensureTableName(entityType, tableName) {
   return tableName;
 }
 
-function buildKeys(entityType, id) {
-  return {
-    pk: `${entityType.toUpperCase()}#${id}`,
-    sk: 'ENTITY',
-  };
-}
+const PRIMARY_KEYS = {
+  candidate: 'guid_id',
+  company: 'cd_cnpj',
+  job: 'guid_id',
+  user: 'cd_cpf',
+};
 
 function buildItem(entityType, payload) {
   const now = new Date().toISOString();
-  const id = payload.id || uuidv4();
+  const id = payload.id || (['job', 'candidate'].includes(entityType) ? payload.guid_id : null) || uuidv4();
 
   return {
     ...payload,
     id,
     entityType,
-    ...buildKeys(entityType, id),
     createdAt: payload.createdAt || now,
     updatedAt: now,
   };
 }
 
-function buildUpdateExpression(updates) {
-  const keys = Object.keys(updates).filter((key) => updates[key] !== undefined && key !== 'id' && key !== 'entityType');
+function buildUpdateExpression(updates, primaryKey) {
+  const keys = Object.keys(updates).filter((key) => updates[key] !== undefined
+    && key !== 'id' && key !== 'entityType' && key !== primaryKey);
   if (keys.length === 0) {
     return null;
   }
@@ -73,10 +73,35 @@ function buildUpdateExpression(updates) {
 
 function createEntityService(entityType, providedTableName) {
   const tableName = ensureTableName(entityType, resolveTableName(entityType, providedTableName));
+  const primaryKey = PRIMARY_KEYS[entityType];
+  if (!primaryKey) throw new Error(`Unsupported entity type: ${entityType}`);
+
+  async function findItemById(id) {
+    const direct = await documentClient.send(new GetCommand({
+      TableName: tableName,
+      Key: { [primaryKey]: id },
+    }));
+    if (direct.Item?.entityType === entityType) return direct.Item;
+
+    // Older records have a generated id distinct from the DynamoDB key.
+    let exclusiveStartKey;
+    do {
+      const response = await documentClient.send(new ScanCommand({
+        TableName: tableName,
+        FilterExpression: '#id = :id AND #entityType = :entityType',
+        ExpressionAttributeNames: { '#id': 'id', '#entityType': 'entityType' },
+        ExpressionAttributeValues: { ':id': id, ':entityType': entityType },
+        ...(exclusiveStartKey ? { ExclusiveStartKey: exclusiveStartKey } : {}),
+      }));
+      if (response.Items?.length) return response.Items[0];
+      exclusiveStartKey = response.LastEvaluatedKey;
+    } while (exclusiveStartKey);
+    return null;
+  }
 
   async function create(payload) {
     const item = buildItem(entityType, payload);
-    logger.info('Persisting entity in DynamoDB', { entityType, tableName, item });
+    logger.info('Persisting entity in DynamoDB', { entityType, tableName, id: item.id });
     await documentClient.send(new PutCommand({
       TableName: tableName,
       Item: item,
@@ -86,38 +111,36 @@ function createEntityService(entityType, providedTableName) {
   }
 
   async function findById(id) {
-    const { pk, sk } = buildKeys(entityType, id);
     logger.info('Fetching entity from DynamoDB', { entityType, tableName, id });
-    const response = await documentClient.send(new GetCommand({
-      TableName: tableName,
-      Key: { pk, sk },
-    }));
+    const item = await findItemById(id);
 
-    if (!response.Item) {
+    if (!item) {
       logger.warn('Entity not found during fetch', { entityType, id });
       throw new NotFoundError(`${entityType} with id ${id} not found`);
     }
 
     logger.info('Entity fetched successfully', { entityType, id });
-    return response.Item;
+    return item;
   }
 
   async function update(id, updates) {
-    const { pk, sk } = buildKeys(entityType, id);
-    const updateExpression = buildUpdateExpression(updates);
+    const updateExpression = buildUpdateExpression(updates, primaryKey);
 
     if (!updateExpression) {
-      logger.warn('No valid updates provided', { entityType, id, updates });
+      logger.warn('No valid updates provided', { entityType, id });
       return findById(id);
     }
 
     try {
-      logger.info('Updating entity in DynamoDB', { entityType, tableName, id, updates });
+      const item = await findById(id);
+      logger.info('Updating entity in DynamoDB', { entityType, tableName, id });
       const response = await documentClient.send(new UpdateCommand({
         TableName: tableName,
-        Key: { pk, sk },
+        Key: { [primaryKey]: item[primaryKey] },
         ...updateExpression,
-        ConditionExpression: 'attribute_exists(pk)',
+        ConditionExpression: 'attribute_exists(#primaryKey) AND #id = :expectedId',
+        ExpressionAttributeNames: { ...updateExpression.ExpressionAttributeNames, '#primaryKey': primaryKey, '#id': 'id' },
+        ExpressionAttributeValues: { ...updateExpression.ExpressionAttributeValues, ':expectedId': item.id },
         ReturnValues: 'ALL_NEW',
       }));
 
@@ -139,13 +162,15 @@ function createEntityService(entityType, providedTableName) {
   }
 
   async function remove(id) {
-    const { pk, sk } = buildKeys(entityType, id);
     try {
+      const item = await findById(id);
       logger.info('Removing entity from DynamoDB', { entityType, tableName, id });
       await documentClient.send(new DeleteCommand({
         TableName: tableName,
-        Key: { pk, sk },
-        ConditionExpression: 'attribute_exists(pk)',
+        Key: { [primaryKey]: item[primaryKey] },
+        ConditionExpression: 'attribute_exists(#primaryKey) AND #id = :expectedId',
+        ExpressionAttributeNames: { '#primaryKey': primaryKey, '#id': 'id' },
+        ExpressionAttributeValues: { ':expectedId': item.id },
       }));
       logger.info('Entity removed successfully', { entityType, id });
       return true;

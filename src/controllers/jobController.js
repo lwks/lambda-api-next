@@ -9,7 +9,7 @@ const jobService = createEntityService('job', TABLE_NAMES.job);
 
 async function createJob(req, res, next) {
   try {
-    logger.info('Received request to create job', { body: req.body });
+    logger.info('Received request to create job', { requestId: req.authRequestId });
     logger.info('Validating required fields for job creation', { requiredFields: ['guid_id'] });
     validateRequiredFields(req.body, ['guid_id']);
     logger.info('Validation succeeded for job creation');
@@ -61,7 +61,7 @@ async function getJob(req, res, next) {
 
 async function updateJob(req, res, next) {
   try {
-    logger.info('Received request to update job', { params: req.params, body: req.body });
+    logger.info('Received request to update job', { params: req.params, requestId: req.authRequestId });
     const job = await jobService.update(req.params.id, req.body);
     logger.info('Job updated in DynamoDB', { jobId: job.id });
     return success(res, job);

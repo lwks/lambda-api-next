@@ -5,9 +5,9 @@ API REST construída com Express e empacotada com `serverless-http` para execuç
 ## 1) Escopo real do repositório
 
 - Node.js 20.x (compatível com 22.x)
-- Quatro tabelas DynamoDB com chave composta (`pk`, `sk`): `Empresas`, `Candidaturas`, `Usuarios` e `Vagas`
-- Variáveis de ambiente para cada tabela ou, alternativamente, uma variável `TABLE_NAME` para fallback global
-- Configuração do Amazon Cognito para validação de JWT Bearer nas rotas protegidas
+- Quatro tabelas DynamoDB: `Empresas` (`cd_cnpj`), `Usuarios` (`cd_cpf`), `Candidaturas` e `Vagas` (`guid_id`)
+- Variáveis de ambiente por tabela; sem elas, a API usa os nomes padrão acima
+- Configuração de Supabase Auth ou Amazon Cognito para validação de JWT Bearer nas rotas protegidas
 
 Ele **não** contém o front-end em Next.js. O nome do repositório inclui `next`, mas a base atual é um backend JavaScript/CommonJS com rotas HTTP, controllers e integração com DynamoDB.
 
@@ -16,8 +16,8 @@ src/
 ├── app.js                  # Instância Express + middlewares globais
 ├── handler.js              # Adaptador Lambda (exporta handler.lambdaHandler)
 ├── local.js                # Runner local (node src/local.js)
-├── auth/                   # Helpers de autenticação Cognito
-│   └── cognitoVerifier.js
+├── auth/                   # Seleção e validação do provedor de identidade
+│   └── accessTokenVerifier.js
 ├── middleware/             # Middlewares reutilizáveis
 │   └── auth.js
 ├── aws_services/           # Clientes e integrações AWS SDK v3
@@ -52,15 +52,27 @@ export CANDIDATE_TABLE_NAME=Candidaturas
 export COMPANY_TABLE_NAME=Empresas
 export USER_TABLE_NAME=Usuarios
 export JOB_TABLE_NAME=Vagas
-# opcional: use TABLE_NAME para fornecer um fallback comum
 export AWS_REGION=us-east-1
 ```
+
+### Supabase Auth
+
+Para o front com login Supabase, configure `AUTH_PROVIDER=supabase`, `SUPABASE_URL` e `SUPABASE_PUBLISHABLE_KEY` na Lambda. URL e chave publicável devem pertencer ao mesmo projeto usado pelo front. Não use a service role key para validar requisições.
+
+```bash
+export AUTH_PROVIDER=supabase
+export SUPABASE_URL=https://<project-ref>.supabase.co
+export SUPABASE_PUBLISHABLE_KEY=<publishable-key>
+```
+
+`POST /api/jobs` e `GET /api/candidates/by-job-guids` exigem `app_metadata.account_type=COMPANY`.
 
 ### Amazon Cognito JWT
 
 > A API usa **`access_token`** como padrão para autorização. O backend **não implementa login/logout/callback**: ele apenas valida o JWT Bearer enviado nas rotas protegidas.
 
 ```bash
+export AUTH_PROVIDER=cognito
 export COGNITO_REGION=us-east-1
 export COGNITO_USER_POOL_ID=us-east-1_abc123
 export COGNITO_APP_CLIENT_ID=4h57exampleclientid
@@ -100,7 +112,7 @@ Quando o token é validado com sucesso, a API anexa no request/contexto autentic
    npm install
    ```
 
-2. Exporte as variáveis de ambiente necessárias de DynamoDB e Cognito.
+2. Exporte as variáveis de DynamoDB e do provedor de identidade escolhido.
 3. Rode o servidor local:
 
 ### `/api/companies`
@@ -413,7 +425,7 @@ Se você estiver atuando neste código:
 
 ## Testes
 
-A suíte automatizada usa Jest + Supertest e cobre o fluxo de autenticação Cognito, incluindo:
+A suíte automatizada usa Jest + Supertest e cobre autenticação Supabase e Cognito, autorização por tipo de conta e as chaves reais das tabelas DynamoDB, incluindo:
 
 - sucesso com token válido
 - `401` sem header `Authorization`
@@ -432,8 +444,9 @@ npm run test:coverage
 
 ## Deploy na AWS Lambda
 
-1. Garanta que o pacote contenha `src/handler.js` e que as variáveis `CANDIDATE_TABLE_NAME`, `COMPANY_TABLE_NAME`, `USER_TABLE_NAME` e `JOB_TABLE_NAME` estejam configuradas na função Lambda (ou utilize `TABLE_NAME` como fallback global, se apropriado).
+1. Garanta que o pacote contenha `src/handler.js` e configure `CANDIDATE_TABLE_NAME`, `COMPANY_TABLE_NAME`, `USER_TABLE_NAME` e `JOB_TABLE_NAME` se os nomes das tabelas diferirem dos padrões.
 2. Configure a runtime para **Node.js 20.x** (compatível com 22.x).
-3. Configure também as variáveis `COGNITO_REGION`, `COGNITO_USER_POOL_ID` e `COGNITO_APP_CLIENT_ID` na Lambda.
+3. Configure `AUTH_PROVIDER=supabase`, `SUPABASE_URL` e `SUPABASE_PUBLISHABLE_KEY` na Lambda que atende à URL do front. Para Cognito, use `AUTH_PROVIDER=cognito`, `COGNITO_REGION`, `COGNITO_USER_POOL_ID` e `COGNITO_APP_CLIENT_ID`.
 4. Use qualquer ferramenta de empacotamento (SAM, Serverless Framework, AWS CDK) apontando para `handler.lambdaHandler`.
-5. Conceda permissões de leitura/escrita na tabela DynamoDB configurada.
+5. Conceda `dynamodb:PutItem`, `GetItem`, `DeleteItem` e `Scan` na tabela `Vagas`, e `Scan` na tabela `Candidaturas`, além das permissões exigidas pelas outras rotas.
+6. O workflow de `develop` atualiza apenas o código, não as variáveis da Lambda. Confira a função, URL, versão, logs no CloudWatch e configuração antes de publicar. Configuração de autenticação ausente retorna `503`, token inválido `401`, provedor indisponível `502` e papel incorreto `403`.

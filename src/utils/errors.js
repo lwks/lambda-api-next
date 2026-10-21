@@ -24,6 +24,15 @@ class ExternalServiceError extends Error {
   }
 }
 
+class AuthConfigurationError extends Error {
+  constructor() {
+    super('Authentication service is not configured');
+    this.name = 'AuthConfigurationError';
+    this.statusCode = 503;
+    this.details = { reason: 'authentication_not_configured' };
+  }
+}
+
 class UnauthorizedError extends Error {
   constructor(message = 'Unauthorized', details) {
     super(message);
@@ -46,6 +55,7 @@ module.exports = {
   NotFoundError,
   ValidationError,
   ExternalServiceError,
+  AuthConfigurationError,
   UnauthorizedError,
   ForbiddenError,
 };
