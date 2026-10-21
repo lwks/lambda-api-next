@@ -1,4 +1,4 @@
-jest.mock('../../auth/cognitoVerifier', () => ({
+jest.mock('../../auth/accessTokenVerifier', () => ({
   verifyAccessToken: jest.fn(),
 }));
 
@@ -40,13 +40,15 @@ jest.mock('../../controllers/zipController', () => ({
 }));
 
 const request = require('supertest');
-const { verifyAccessToken } = require('../../auth/cognitoVerifier');
+const { verifyAccessToken } = require('../../auth/accessTokenVerifier');
 const app = require('../../app');
 
 describe('app auth integration', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    verifyAccessToken.mockResolvedValue({ sub: 'user-1', scope: ['jobs:write'], groups: ['admins'] });
+    verifyAccessToken.mockResolvedValue({
+      sub: 'user-1', scope: ['jobs:write'], groups: ['admins'], accountType: 'COMPANY',
+    });
   });
 
   it('mantém /health pública', async () => {
@@ -91,6 +93,49 @@ describe('app auth integration', () => {
     });
   });
 
+  it('protege GET /api/candidates/by-job-guids e retorna 401 sem bearer token', async () => {
+    const response = await request(app).get('/api/candidates/by-job-guids?guid_vaga=job-1');
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({
+      message: 'Unauthorized',
+      details: { reason: 'missing_authorization_header' },
+    });
+  });
+
+  it('permite COMPANY criar vaga e consultar candidaturas vinculadas', async () => {
+    const createResponse = await request(app)
+      .post('/api/jobs')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ guid_id: 'job-1' });
+    const candidatesResponse = await request(app)
+      .get('/api/candidates/by-job-guids?guid_vaga=job-1')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(createResponse.status).toBe(201);
+    expect(candidatesResponse.status).toBe(200);
+    expect(candidatesResponse.body.data.auth.accountType).toBe('COMPANY');
+  });
+
+  it('retorna 403 quando CANDIDATE tenta criar vaga ou consultar candidaturas', async () => {
+    verifyAccessToken.mockResolvedValue({ sub: 'candidate-1', accountType: 'CANDIDATE' });
+
+    const createResponse = await request(app)
+      .post('/api/jobs')
+      .set('Authorization', 'Bearer candidate-token')
+      .send({ guid_id: 'job-1' });
+    const candidatesResponse = await request(app)
+      .get('/api/candidates/by-job-guids?guid_vaga=job-1')
+      .set('Authorization', 'Bearer candidate-token');
+
+    expect(createResponse.status).toBe(403);
+    expect(candidatesResponse.status).toBe(403);
+    expect(createResponse.body.details).toEqual({
+      reason: 'insufficient_account_type',
+      requiredAccountType: 'COMPANY',
+    });
+  });
+
   it('anexa o contexto autenticado nas rotas protegidas', async () => {
     const response = await request(app)
       .get('/api/companies')
@@ -101,6 +146,7 @@ describe('app auth integration', () => {
       sub: 'user-1',
       scope: ['jobs:write'],
       groups: ['admins'],
+      accountType: 'COMPANY',
     });
     expect(verifyAccessToken).toHaveBeenCalledWith('valid-token');
   });

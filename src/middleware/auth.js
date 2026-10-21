@@ -1,5 +1,7 @@
-const { verifyAccessToken } = require('../auth/cognitoVerifier');
-const { UnauthorizedError } = require('../utils/errors');
+const { verifyAccessToken } = require('../auth/accessTokenVerifier');
+const { ForbiddenError, UnauthorizedError } = require('../utils/errors');
+const { logger } = require('../utils/logger');
+const { randomUUID } = require('crypto');
 
 const DEFAULT_PUBLIC_ROUTES = [
   { method: 'GET', pattern: /^\/jobs(?:\/[^/]+)?$/ },
@@ -56,14 +58,46 @@ function createAuthGuard(options = {}) {
       return next();
     }
 
+    const requestId = req.apiGateway?.context?.awsRequestId
+      || req.apiGateway?.event?.requestContext?.requestId
+      || randomUUID();
+    req.authRequestId = requestId;
+    const route = `${req.method} ${req.baseUrl}${req.path}`;
+    const provider = process.env.AUTH_PROVIDER || 'auto';
+    let stage = 'bearer_header';
     try {
       const token = extractBearerToken(req.headers.authorization);
+      stage = 'token_verification';
       const auth = await verifyToken(token);
       req.auth = auth;
+      logger.info('Authentication succeeded', { route, stage, provider, requestId });
       return next();
     } catch (error) {
+      logger.warn('Authentication failed', {
+        route, stage, provider, errorClass: error.name || 'Error', requestId,
+      });
       return next(error);
     }
+  };
+}
+
+function requireAccountType(accountType) {
+  return function accountTypeGuard(req, res, next) {
+    if (req.auth && req.auth.accountType === accountType) {
+      return next();
+    }
+
+    logger.warn('Authentication failed', {
+      route: `${req.method} ${req.baseUrl}${req.path}`,
+      stage: 'account_type',
+      provider: process.env.AUTH_PROVIDER || 'auto',
+      errorClass: 'ForbiddenError',
+      requestId: req.authRequestId || randomUUID(),
+    });
+    return next(new ForbiddenError('Forbidden', {
+      reason: 'insufficient_account_type',
+      requiredAccountType: accountType,
+    }));
   };
 }
 
@@ -72,4 +106,5 @@ module.exports = {
   createAuthGuard,
   extractBearerToken,
   isPublicRoute,
+  requireAccountType,
 };

@@ -1,5 +1,5 @@
 const { CognitoJwtVerifier } = require('aws-jwt-verify');
-const { ForbiddenError, UnauthorizedError } = require('../utils/errors');
+const { AuthConfigurationError, ExternalServiceError, ForbiddenError, UnauthorizedError } = require('../utils/errors');
 
 let cachedVerifier;
 let cachedVerifierKey;
@@ -33,7 +33,7 @@ function getCognitoConfig(env = process.env) {
     .map(([key]) => key);
 
   if (missing.length > 0) {
-    throw new Error(`Missing Cognito configuration: ${missing.join(', ')}`);
+    throw new AuthConfigurationError();
   }
 
   return config;
@@ -109,6 +109,10 @@ function assertGroupAccess(payload, allowedGroups) {
 }
 
 function buildAuthenticatedContext(payload) {
+  const appMetadata = payload.app_metadata && typeof payload.app_metadata === 'object'
+    ? payload.app_metadata
+    : {};
+
   return {
     sub: payload.sub,
     scope: getScopes(payload),
@@ -116,12 +120,110 @@ function buildAuthenticatedContext(payload) {
     username: payload.username || payload['cognito:username'] || null,
     clientId: payload.client_id || payload.aud || null,
     tokenUse: payload.token_use,
+    accountType: appMetadata.account_type || payload.account_type || payload['custom:account_type'] || null,
     claims: payload,
   };
 }
 
+function getSupabaseConfig(env = process.env) {
+  const url = env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL;
+  const apiKey = env.SUPABASE_PUBLISHABLE_KEY
+    || env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+    || env.SUPABASE_ANON_KEY;
+
+  if (!url || !apiKey) {
+    return null;
+  }
+
+  return { url: url.replace(/\/+$/, ''), apiKey };
+}
+
+function getAuthProvider(env = process.env) {
+  const configuredProvider = String(env.AUTH_PROVIDER || '').trim().toLowerCase();
+  if (configuredProvider) {
+    if (configuredProvider !== 'supabase' && configuredProvider !== 'cognito') {
+      throw new AuthConfigurationError();
+    }
+    return configuredProvider;
+  }
+
+  return getSupabaseConfig(env) ? 'supabase' : 'cognito';
+}
+
+async function verifySupabaseAccessToken(token, options = {}) {
+  const config = options.config || getSupabaseConfig(options.env);
+  const fetchImpl = options.fetch || globalThis.fetch;
+
+  if (!config) {
+    throw new AuthConfigurationError();
+  }
+
+  let response;
+  try {
+    response = await fetchImpl(`${config.url}/auth/v1/user`, {
+      method: 'GET',
+      headers: {
+        apikey: config.apiKey,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+  } catch (error) {
+    throw new ExternalServiceError('Authentication service unavailable', {
+      reason: 'authentication_service_unavailable',
+    });
+  }
+
+  if (response.status === 401 || response.status === 403) {
+    throw new UnauthorizedError('Unauthorized', { reason: 'invalid_token' });
+  }
+
+  if (!response.ok) {
+    throw new ExternalServiceError('Authentication service unavailable', {
+      reason: 'authentication_service_unavailable',
+      status: response.status,
+    });
+  }
+
+  let user;
+  try {
+    user = await response.json();
+  } catch {
+    throw new ExternalServiceError('Authentication service returned an invalid response', {
+      reason: 'invalid_authentication_response',
+    });
+  }
+
+  if (!user || typeof user.id !== 'string' || !user.id) {
+    throw new UnauthorizedError('Unauthorized', { reason: 'invalid_token' });
+  }
+
+  const claims = {
+    sub: user.id,
+    email: user.email,
+    app_metadata: user.app_metadata || {},
+    user_metadata: user.user_metadata || {},
+  };
+
+  return {
+    sub: user.id,
+    scope: [],
+    groups: [],
+    username: user.email || null,
+    clientId: null,
+    tokenUse: 'access',
+    accountType: claims.app_metadata.account_type || null,
+    claims,
+  };
+}
+
 async function verifyAccessToken(token, options = {}) {
-  const config = options.config || getCognitoConfig(options.env);
+  const env = options.env || process.env;
+  const provider = getAuthProvider(env);
+  if (provider === 'supabase') {
+    return verifySupabaseAccessToken(token, { config: getSupabaseConfig(env), fetch: options.fetch });
+  }
+
+  const config = options.config || getCognitoConfig(env);
   const verifier = options.verifier || getVerifier(config);
 
   try {
@@ -138,7 +240,6 @@ async function verifyAccessToken(token, options = {}) {
 
     throw new UnauthorizedError('Unauthorized', {
       reason: 'invalid_token',
-      error: error.message,
     });
   }
 }
@@ -152,8 +253,11 @@ module.exports = {
   buildAuthenticatedContext,
   clearVerifierCache,
   createVerifier,
+  getAuthProvider,
   getCognitoConfig,
   getGroups,
+  getSupabaseConfig,
   getScopes,
   verifyAccessToken,
+  verifySupabaseAccessToken,
 };
