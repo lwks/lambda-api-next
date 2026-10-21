@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node src/local.js",
     "dev": "node src/local.js",
-    "lint": "echo 'No lint step configured'"
+    "lint": "echo 'No lint step configured'",
+    "test": "jest --runInBand",
+    "test:coverage": "jest --runInBand --coverage"
   },
   "keywords": [
     "serverless",
@@ -20,10 +22,15 @@
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.587.0",
     "@aws-sdk/lib-dynamodb": "^3.587.0",
+    "aws-jwt-verify": "^5.1.1",
     "express": "^4.19.2",
+    "serverless-http": "^3.2.0",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
-    "serverless-http": "^3.2.0",
     "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "jest": "^30.3.0",
+    "supertest": "^7.2.2"
   }
 }

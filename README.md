@@ -1,57 +1,32 @@
 # AGENTS.md — Guia real do repositório `lambda-api-next`
 
-Este documento descreve **o que existe hoje neste repositório**, para orientar agentes (Codex) e desenvolvedores que atuem no backend.
+API REST construída com Express e empacotada com `serverless-http` para execução em AWS Lambda. A aplicação usa DynamoDB (AWS SDK v3) como camada de persistência e organiza a lógica em camadas de controllers, services, utilitários e middlewares reutilizáveis.
 
 ## 1) Escopo real do repositório
 
-Este repositório é uma **API REST em Node.js com Express**, preparada para execução em **AWS Lambda** por meio de `serverless-http`.
+- Node.js 20.x (compatível com 22.x)
+- Quatro tabelas DynamoDB com chave composta (`pk`, `sk`): `Empresas`, `Candidaturas`, `Usuarios` e `Vagas`
+- Variáveis de ambiente para cada tabela ou, alternativamente, uma variável `TABLE_NAME` para fallback global
+- Configuração do Amazon Cognito para validação de JWT Bearer nas rotas protegidas
 
 Ele **não** contém o front-end em Next.js. O nome do repositório inclui `next`, mas a base atual é um backend JavaScript/CommonJS com rotas HTTP, controllers e integração com DynamoDB.
 
-## 2) Stack atual
-
-* **Runtime:** Node.js 20.x (compatível com 22.x)
-* **Framework HTTP:** Express 4
-* **Adapter para Lambda:** `serverless-http`
-* **Persistência:** DynamoDB via AWS SDK v3 (`@aws-sdk/client-dynamodb` + `@aws-sdk/lib-dynamodb`)
-* **Documentação:** `swagger-jsdoc` + `swagger-ui-express`
-* **Módulo:** CommonJS
-* **Geração de IDs:** `uuid`
-
-## 3) Estrutura atual do projeto
-
 ```text
 src/
-├── app.js                  # App Express, middlewares, CORS, docs, health, rotas e tratamento global de erros
-├── handler.js              # Exporta lambdaHandler para AWS Lambda
-├── local.js                # Runner local em Node
-├── aws_services/
-│   └── dynamoClient.js     # DynamoDBClient + DynamoDBDocumentClient
-├── config/
-│   └── tableNames.js       # Resolução dos nomes de tabela por entidade
-├── controllers/
-│   ├── candidateController.js
-│   ├── companyController.js
-│   ├── jobController.js
-│   ├── userController.js
-│   └── zipController.js
-├── routes/
-│   ├── candidateRoutes.js
-│   ├── companyRoutes.js
-│   ├── index.js
-│   ├── jobRoutes.js
-│   ├── userRoutes.js
-│   └── zipRoutes.js
-├── services/
-│   ├── entityServiceFactory.js  # CRUD genérico para entidades em DynamoDB
-│   └── zipService.js            # Integração com ViaCEP
-├── utils/
-│   ├── errors.js
-│   ├── logger.js
-│   ├── pagination.js
-│   ├── response.js
-│   └── validators.js
-└── swagger.js               # Especificação OpenAPI gerada em código
+├── app.js                  # Instância Express + middlewares globais
+├── handler.js              # Adaptador Lambda (exporta handler.lambdaHandler)
+├── local.js                # Runner local (node src/local.js)
+├── auth/                   # Helpers de autenticação Cognito
+│   └── cognitoVerifier.js
+├── middleware/             # Middlewares reutilizáveis
+│   └── auth.js
+├── aws_services/           # Clientes e integrações AWS SDK v3
+│   └── dynamoClient.js
+├── controllers/            # Controllers com regras HTTP e validação
+├── routes/                 # Definições de rotas Express
+├── services/               # Regras de negócio / DynamoDB access
+├── tests/                  # Testes automatizados
+└── utils/                  # Utilitários (erros, responses, paginação, validação)
 ```
 
 ## 4) Comportamento HTTP real da aplicação
@@ -68,19 +43,65 @@ Todas as rotas de negócio ficam sob **`/api`**.
 
 ## 5) Rotas reais expostas
 
-### `/api/candidates`
+## Variáveis de ambiente
 
-* `POST /api/candidates`
-* `GET /api/candidates`
-* `GET /api/candidates/by-job-guids`
-* `GET /api/candidates/:id`
-* `PUT /api/candidates/:id`
-* `DELETE /api/candidates/:id`
+### DynamoDB
 
-**Campo mínimo exigido no create:**
+```bash
+export CANDIDATE_TABLE_NAME=Candidaturas
+export COMPANY_TABLE_NAME=Empresas
+export USER_TABLE_NAME=Usuarios
+export JOB_TABLE_NAME=Vagas
+# opcional: use TABLE_NAME para fornecer um fallback comum
+export AWS_REGION=us-east-1
+```
 
-* `guid_id`
-* `guid_vaga`
+### Amazon Cognito JWT
+
+> A API usa **`access_token`** como padrão para autorização. O backend **não implementa login/logout/callback**: ele apenas valida o JWT Bearer enviado nas rotas protegidas.
+
+```bash
+export COGNITO_REGION=us-east-1
+export COGNITO_USER_POOL_ID=us-east-1_abc123
+export COGNITO_APP_CLIENT_ID=4h57exampleclientid
+# opcional: exige que o access_token contenha este scope
+export COGNITO_REQUIRED_SCOPE=jobs:write
+# opcional: lista CSV de grupos aceitos
+export COGNITO_ALLOWED_GROUPS=admins,recruiters
+```
+
+### O que é validado no JWT
+
+A validação é feita com `aws-jwt-verify` e cobre, no mínimo:
+
+- assinatura do token
+- expiração (`exp`)
+- emissor (`iss`)
+- uso do token (`token_use=access`)
+- `client_id` do app client configurado
+- `scope` obrigatório, quando `COGNITO_REQUIRED_SCOPE` estiver configurado
+- `cognito:groups`, quando `COGNITO_ALLOWED_GROUPS` estiver configurado
+
+Quando o token é validado com sucesso, a API anexa no request/contexto autenticado:
+
+- `sub`
+- `scope` (array)
+- `groups`
+- `username`
+- `clientId`
+- `tokenUse`
+- `claims` (payload completo validado)
+
+## Executar localmente
+
+1. Instale as dependências:
+
+   ```bash
+   npm install
+   ```
+
+2. Exporte as variáveis de ambiente necessárias de DynamoDB e Cognito.
+3. Rode o servidor local:
 
 ### `/api/companies`
 
@@ -92,9 +113,99 @@ Todas as rotas de negócio ficam sob **`/api`**.
 
 **Campo mínimo exigido no create:**
 
-* `cd_cnpj`
+## Autenticação e autorização
 
-### `/api/users`
+### Header esperado
+
+```http
+Authorization: Bearer <access_token>
+```
+
+### Rotas públicas
+
+As rotas abaixo permanecem públicas para preservar a arquitetura atual e evitar breaking changes desnecessários nos fluxos já usados pelo front:
+
+- `GET /health`
+- `GET /docs`
+- `GET /docs.json`
+- `GET /api/jobs`
+- `GET /api/jobs/:id`
+- `POST /api/candidates`
+- `GET /api/zips/:zip`
+
+#### Decisão sobre `/api/zips`
+
+`/api/zips` permanece pública porque a consulta de CEP é usada no preenchimento de formulários do front e não expõe dados sensíveis. Isso evita exigir autenticação para um lookup utilitário de endereço.
+
+### Rotas protegidas
+
+Todas as demais rotas sob `/api` exigem JWT Bearer válido do Cognito. Exemplos:
+
+- `GET /api/candidates`
+- `GET /api/candidates/by-job-guids`
+- `GET /api/candidates/:id`
+- `PUT /api/candidates/:id`
+- `DELETE /api/candidates/:id`
+- `POST /api/jobs`
+- `PUT /api/jobs/:id`
+- `DELETE /api/jobs/:id`
+- `POST /api/companies`
+- `GET /api/companies`
+- `GET /api/users`
+- demais operações administrativas sob `/api/companies` e `/api/users`
+
+### Respostas padronizadas de autenticação
+
+#### `401 Unauthorized`
+
+Usado para token ausente, Bearer malformado, token inválido ou expirado.
+
+```json
+{
+  "message": "Unauthorized",
+  "details": {
+    "reason": "invalid_token"
+  }
+}
+```
+
+Outros `reason` possíveis:
+
+- `missing_authorization_header`
+- `malformed_bearer_token`
+- `invalid_token`
+
+#### `403 Forbidden`
+
+Usado quando o token é válido, mas não tem `scope` ou grupo suficiente.
+
+```json
+{
+  "message": "Forbidden",
+  "details": {
+    "reason": "insufficient_scope",
+    "requiredScope": "jobs:write",
+    "scope": ["openid", "jobs:read"]
+  }
+}
+```
+
+Exemplo para grupos:
+
+```json
+{
+  "message": "Forbidden",
+  "details": {
+    "reason": "insufficient_group",
+    "allowedGroups": ["admins", "recruiters"],
+    "groups": ["candidates"]
+  }
+}
+```
+
+## Endpoints
+
+Todos os endpoints são versionados sob `/api`.
 
 * `POST /api/users`
 * `GET /api/users`
@@ -104,9 +215,7 @@ Todas as rotas de negócio ficam sob **`/api`**.
 
 **Campo mínimo exigido no create:**
 
-* `cd_cpf`
-
-### `/api/jobs`
+### Saúde
 
 * `POST /api/jobs`
 * `GET /api/jobs`
@@ -116,7 +225,14 @@ Todas as rotas de negócio ficam sob **`/api`**.
 
 **Campo mínimo exigido no create:**
 
-* `guid_id`
+| Método | Rota | Autenticação | Descrição | Body (JSON) |
+| --- | --- | --- | --- | --- |
+| `POST` | `/` | Pública | Cria um candidato | `{ "fullName": string, "email": string, "guid_id": string, "guid_vaga": string, ... }` |
+| `GET` | `/by-job-guids?guid_vaga=...` | JWT | Lista candidaturas por `guid_vaga` (query) | — |
+| `GET` | `/` | JWT | Lista candidatos (suporta `limit` e `lastKey`) | — |
+| `GET` | `/:id` | JWT | Obtém um candidato | — |
+| `PUT` | `/:id` | JWT | Atualiza candidato | Campos parciais |
+| `DELETE` | `/:id` | JWT | Remove candidato | — |
 
 ### `/api/zips`
 
@@ -132,29 +248,42 @@ Exemplo de resposta:
 }
 ```
 
-## 6) Regras de validação reais
+### Empresas (`/api/companies`)
 
-As validações atuais são **mínimas** e baseadas apenas em presença de campos obrigatórios no create:
-
-* Candidate: `guid_id`, `guid_vaga`
-* Company: `cd_cnpj`
-* User: `cd_cpf`
-* Job: `guid_id`
-
-Não há, hoje, validação de schema rica para payloads (por exemplo: formato de e-mail, enums, tamanho mínimo, etc.).
+| Método | Rota | Autenticação | Descrição | Body (JSON) |
+| --- | --- | --- | --- | --- |
+| `POST` | `/` | JWT | Cria empresa | `{ "name": string, "cd_cnpj": string, ... }` |
+| `GET` | `/` | JWT | Lista empresas (`limit`, `lastKey`) | — |
+| `GET` | `/:id` | JWT | Obtém empresa | — |
+| `PUT` | `/:id` | JWT | Atualiza empresa | Campos parciais |
+| `DELETE` | `/:id` | JWT | Remove empresa | — |
 
 ### Validação de CEP
 
-`GET /api/zips/:zip` aceita apenas CEP com:
+| Método | Rota | Autenticação | Descrição | Body (JSON) |
+| --- | --- | --- | --- | --- |
+| `POST` | `/` | JWT | Cria usuário | `{ "username": string, "role": string, "cd_cpf": string, ... }` |
+| `GET` | `/` | JWT | Lista usuários (`limit`, `lastKey`) | — |
+| `GET` | `/:id` | JWT | Obtém usuário | — |
+| `PUT` | `/:id` | JWT | Atualiza usuário | Campos parciais |
+| `DELETE` | `/:id` | JWT | Remove usuário | — |
 
 * `12345678`
 * `12345-678`
 
-Se o formato for inválido, retorna erro `400`.
+| Método | Rota | Autenticação | Descrição | Body (JSON) |
+| --- | --- | --- | --- | --- |
+| `POST` | `/` | JWT | Cria vaga | `{ "title": string, "companyId": string, "guid_id": string, ... }` |
+| `GET` | `/` | Pública | Lista vagas (`limit`, `lastKey`) | — |
+| `GET` | `/:id` | Pública | Obtém vaga | — |
+| `PUT` | `/:id` | JWT | Atualiza vaga | Campos parciais |
+| `DELETE` | `/:id` | JWT | Remove vaga | — |
 
 ## 7) Formato real de resposta
 
-### Sucesso
+| Método | Rota | Autenticação | Descrição | Body (JSON) |
+| --- | --- | --- | --- | --- |
+| `GET` | `/:zip` | Pública | Consulta cidade e estado a partir de um CEP brasileiro (8 dígitos, com ou sem hífen) | — |
 
 Respostas de sucesso usam o helper padrão:
 
@@ -259,77 +388,7 @@ Resposta típica de listagem:
 }
 ```
 
-## 11) Como as consultas funcionam hoje
-
-### CRUD padrão
-
-As listagens usam **`ScanCommand` com `FilterExpression` por `entityType`**.
-
-Isso significa que, no estado atual, a API **não usa Query otimizada por partição para listar**; ela faz varredura na tabela configurada e filtra pela entidade.
-
-### Filtro de candidatos por vaga
-
-`GET /api/candidates/by-job-guids`:
-
-* aceita `guid_vaga` repetido na query
-* aceita CSV (`guid_vaga=A,B`)
-* normaliza, remove duplicados e ignora vazios
-* executa varreduras (`Scan`) filtrando por `guid_vaga`
-* percorre todas as páginas até esgotar resultados
-
-Isso é funcional, mas tem custo e latência proporcionais ao volume da tabela.
-
-## 12) Resolução de tabelas (comportamento exato atual)
-
-As controllers instanciam os serviços com os nomes resolvidos em `src/config/tableNames.js`.
-
-Hoje, os defaults efetivos são:
-
-* candidates → `Candidaturas`
-* companies → `Empresas`
-* users → `Usuarios`
-* jobs → `Vagas`
-
-Ou seja, **na prática atual**, se as variáveis específicas não forem definidas, o código cai nesses nomes fixos.
-
-> Observação importante: embora `entityServiceFactory` tenha suporte a `TABLE_NAME`, esse fallback global **não é o caminho efetivo nas controllers atuais**, porque elas já passam um nome de tabela explícito vindo de `tableNames.js`.
-
-## 13) Execução local real
-
-1. Instalar dependências:
-
-```bash
-npm install
-```
-
-2. Subir localmente:
-
-```bash
-npm run dev
-# ou
-npm start
-```
-
-3. Porta padrão:
-
-* `PORT` default = `3000`
-
-## 14) Deploy real na AWS Lambda
-
-O handler exposto para Lambda é:
-
-* `lambdaHandler` em `src/handler.js`
-
-Ao empacotar e publicar:
-
-* use runtime Node.js 20.x (ou 22.x compatível)
-* aponte o handler para `src/handler.lambdaHandler` (ou equivalente no empacotamento, conforme a ferramenta)
-* garanta permissão de leitura/escrita nas tabelas DynamoDB utilizadas
-* configure `AWS_REGION` / `AWS_DEFAULT_REGION` se necessário
-
-## 15) O que este repositório NÃO tem hoje
-
-Para evitar suposições erradas, este repositório **não implementa**, no estado atual:
+**Erros comuns:**
 
 * autenticação/autorização
 * integração com Cognito
@@ -340,31 +399,41 @@ Para evitar suposições erradas, este repositório **não implementa**, no esta
 * validação avançada de contratos
 * acesso por índices secundários (GSI/LSI) para listagens principais
 
-## 16) Diretrizes para agentes trabalhando neste repositório
+## Paginação
 
 Se você estiver atuando neste código:
 
-1. Trate este projeto como **backend Express serverless**, não como front.
-2. Preserve o contrato real de respostas (`{ data: ... }`, `204` sem body, erros com `message`).
-3. Não assuma validações ricas já existentes; hoje elas são mínimas.
-4. Tenha atenção a custo/performance: listagens e filtros atuais fazem **Scan**.
-5. Se for evoluir escalabilidade, a principal oportunidade está em:
+## Respostas e erros
 
-   * modelagem de acesso por chave
-   * uso de GSIs
-   * evitar `Scan` para consultas frequentes
-6. Se for alterar tabelas/config, valide o impacto da resolução atual de nomes em `tableNames.js`.
-7. Não documente comportamento do front neste arquivo, a menos que o código do backend passe a depender explicitamente disso.
+- Sucesso padrão: `{ "data": ... }`
+- Erros de validação retornam `400` com `{ "message": string, "details": { ... } }`.
+- Falhas de autenticação retornam `401`.
+- Falhas de autorização retornam `403`.
+- Entidades inexistentes retornam `404`.
 
-## 17) Resumo executivo
+## Testes
 
-Este repositório é uma **API REST Node.js/Express para AWS Lambda**, com CRUD genérico em DynamoDB para:
+A suíte automatizada usa Jest + Supertest e cobre o fluxo de autenticação Cognito, incluindo:
 
-* candidatos
-* empresas
-* usuários
-* vagas
-* consulta de CEP via ViaCEP
+- sucesso com token válido
+- `401` sem header `Authorization`
+- `401` com Bearer malformado
+- `401` com token inválido
+- `401` com token expirado (mockado)
+- `403` por `scope` ou grupo insuficiente
+- bypass correto das rotas públicas
 
-O desenho atual privilegia simplicidade e rapidez de implementação. O principal ponto de atenção arquitetural é que as listagens e filtros usam **scan**, o que funciona para baixo volume, mas pode aumentar custo e latência conforme a base crescer.
-   
+Comandos úteis:
+
+```bash
+npm test
+npm run test:coverage
+```
+
+## Deploy na AWS Lambda
+
+1. Garanta que o pacote contenha `src/handler.js` e que as variáveis `CANDIDATE_TABLE_NAME`, `COMPANY_TABLE_NAME`, `USER_TABLE_NAME` e `JOB_TABLE_NAME` estejam configuradas na função Lambda (ou utilize `TABLE_NAME` como fallback global, se apropriado).
+2. Configure a runtime para **Node.js 20.x** (compatível com 22.x).
+3. Configure também as variáveis `COGNITO_REGION`, `COGNITO_USER_POOL_ID` e `COGNITO_APP_CLIENT_ID` na Lambda.
+4. Use qualquer ferramenta de empacotamento (SAM, Serverless Framework, AWS CDK) apontando para `handler.lambdaHandler`.
+5. Conceda permissões de leitura/escrita na tabela DynamoDB configurada.
