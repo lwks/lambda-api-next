@@ -86,9 +86,9 @@ async function createDownload(auth, id) {
   const candidate = await candidates.findById(id);
   if (!candidate.cv?.key || !candidate.guid_vaga) throw new NotFoundError('CV not found');
   const job = await jobs.findById(candidate.guid_vaga);
-  const companyId = auth.claims?.app_metadata?.cd_cnpj || auth.claims?.user_metadata?.cd_cnpj || auth.claims?.cd_cnpj;
-  const ownerId = job.cd_cnpj || job.companyId || job.company_id || job.criado_por;
-  if (!companyId || !ownerId || String(companyId).replace(/\D/g, '') !== String(ownerId).replace(/\D/g, '')) throw new ForbiddenError('Company does not own this vacancy');
+  if (!auth.sub || !job.owner_sub || job.owner_sub !== auth.sub) {
+    throw new ForbiddenError('Company does not own this vacancy');
+  }
   return { downloadUrl: urlOf(await presign('GET', candidate.cv.key, null, candidate.cv.filename)), filename: candidate.cv.filename };
 }
 
