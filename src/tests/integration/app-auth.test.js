@@ -25,6 +25,8 @@ jest.mock('../../controllers/candidateController', () => ({
   getCandidate: (req, res) => res.json({ data: { route: 'getCandidate', auth: req.auth || null } }),
   updateCandidate: (req, res) => res.json({ data: { route: 'updateCandidate', auth: req.auth || null } }),
   deleteCandidate: (req, res) => res.status(204).send(),
+  createCvUpload: (req, res) => res.status(200).json({ data: { route: 'createCvUpload' } }),
+  getCvDownload: (req, res) => res.status(200).json({ data: { route: 'getCvDownload' } }),
 }));
 
 jest.mock('../../controllers/userController', () => ({

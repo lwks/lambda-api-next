@@ -53,7 +53,10 @@ export COMPANY_TABLE_NAME=Empresas
 export USER_TABLE_NAME=Usuarios
 export JOB_TABLE_NAME=Vagas
 export AWS_REGION=us-east-1
+export CV_S3_BUCKET=cluster
 ```
+
+CV storage uses private S3 objects under `cvs/`. Set `CV_S3_BUCKET=cluster` on the Lambda and grant its execution role `s3:PutObject` and `s3:GetObject` on `arn:aws:s3:::cluster/cvs/*`. Keep S3 Block Public Access enabled. Configure bucket CORS to allow the frontend origin to issue `PUT` requests with the `Content-Type` header and expose `ETag`. The Lambda checks uploaded object size and content type before saving the CV reference.
 
 ### Supabase Auth
 

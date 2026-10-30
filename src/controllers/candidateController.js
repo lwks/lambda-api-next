@@ -5,6 +5,7 @@ const { success, created, noContent } = require('../utils/response');
 const { decodeLastKey, encodeLastKey } = require('../utils/pagination');
 const { ValidationError } = require('../utils/errors');
 const { logger } = require('../utils/logger');
+const cvStorage = require('../services/cvStorageService');
 
 const candidateService = createEntityService('candidate', TABLE_NAMES.candidate);
 
@@ -13,6 +14,13 @@ async function createCandidate(req, res, next) {
     logger.info('Received request to create candidate');
     logger.info('Validating required fields for candidate creation', { requiredFields: ['guid_id', 'guid_vaga'] });
     validateRequiredFields(req.body, ['guid_id', 'guid_vaga']);
+    if (req.body.cv) {
+      const expectedPrefix = `cvs/${req.auth?.sub}/${req.body.guid_id}.`;
+      if (!req.auth?.sub || typeof req.body.cv.key !== 'string' || !req.body.cv.key.startsWith(expectedPrefix)) {
+        throw new ValidationError('CV reference does not belong to this candidate');
+      }
+      await cvStorage.verifyUploadedCv(req.body.cv);
+    }
     logger.info('Validation succeeded for candidate creation');
     const candidate = await candidateService.create(req.body);
     logger.info('Candidate persisted in DynamoDB', { candidateId: candidate.id });
@@ -120,6 +128,16 @@ async function deleteCandidate(req, res, next) {
   }
 }
 
+async function createCvUpload(req, res, next) {
+  try { return success(res, await cvStorage.createUpload(req.auth, req.body || {})); }
+  catch (error) { return next(error); }
+}
+
+async function getCvDownload(req, res, next) {
+  try { return success(res, await cvStorage.createDownload(req.auth, req.params.id)); }
+  catch (error) { return next(error); }
+}
+
 module.exports = {
   createCandidate,
   listCandidates,
@@ -127,4 +145,6 @@ module.exports = {
   getCandidate,
   updateCandidate,
   deleteCandidate,
+  createCvUpload,
+  getCvDownload,
 };

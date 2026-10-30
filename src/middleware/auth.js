@@ -5,7 +5,6 @@ const { randomUUID } = require('crypto');
 
 const DEFAULT_PUBLIC_ROUTES = [
   { method: 'GET', pattern: /^\/jobs(?:\/[^/]+)?$/ },
-  { method: 'POST', pattern: /^\/candidates$/ },
   { method: 'GET', pattern: /^\/zips\/[^/]+$/ },
 ];
 
