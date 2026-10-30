@@ -3,6 +3,7 @@ const { TABLE_NAMES } = require('../config/tableNames');
 const { validateRequiredFields } = require('../utils/validators');
 const { success, created, noContent } = require('../utils/response');
 const { decodeLastKey, encodeLastKey } = require('../utils/pagination');
+const { ValidationError } = require('../utils/errors');
 const { logger } = require('../utils/logger');
 
 const jobService = createEntityService('job', TABLE_NAMES.job);
@@ -12,8 +13,9 @@ async function createJob(req, res, next) {
     logger.info('Received request to create job', { requestId: req.authRequestId });
     logger.info('Validating required fields for job creation', { requiredFields: ['guid_id'] });
     validateRequiredFields(req.body, ['guid_id']);
+    if (!req.auth?.sub) throw new ValidationError('Authenticated company identity missing');
     logger.info('Validation succeeded for job creation');
-    const job = await jobService.create(req.body);
+    const job = await jobService.create({ ...req.body, owner_sub: req.auth.sub });
     logger.info('Job persisted in DynamoDB', { jobId: job.id });
     return created(res, job);
   } catch (error) {
@@ -62,7 +64,9 @@ async function getJob(req, res, next) {
 async function updateJob(req, res, next) {
   try {
     logger.info('Received request to update job', { params: req.params, requestId: req.authRequestId });
-    const job = await jobService.update(req.params.id, req.body);
+    const updates = { ...req.body };
+    delete updates.owner_sub;
+    const job = await jobService.update(req.params.id, updates);
     logger.info('Job updated in DynamoDB', { jobId: job.id });
     return success(res, job);
   } catch (error) {
