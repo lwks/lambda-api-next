@@ -6,12 +6,16 @@ const {
   getCandidate,
   updateCandidate,
   deleteCandidate,
+  createCvUpload,
+  getCvDownload,
 } = require('../controllers/candidateController');
 const { requireAccountType } = require('../middleware/auth');
 
 const router = express.Router();
 
-router.post('/', createCandidate);
+router.post('/', requireAccountType('CANDIDATE'), createCandidate);
+router.post('/cv-upload', requireAccountType('CANDIDATE'), createCvUpload);
+router.get('/:id/cv-download', requireAccountType('COMPANY'), getCvDownload);
 router.get('/', listCandidates);
 router.get('/by-job-guids', requireAccountType('COMPANY'), listCandidatesByJobGuids);
 router.get('/:id', getCandidate);

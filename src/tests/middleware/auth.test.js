@@ -98,7 +98,7 @@ describe('auth middleware', () => {
     const zipsResponse = await request(app).get('/zips/01001000');
 
     expect(jobsResponse.status).toBe(200);
-    expect(candidatesResponse.status).toBe(201);
+    expect(candidatesResponse.status).toBe(401);
     expect(zipsResponse.status).toBe(200);
     expect(verifyToken).not.toHaveBeenCalled();
   });
