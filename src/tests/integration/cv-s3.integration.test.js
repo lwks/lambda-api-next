@@ -32,12 +32,18 @@ async function deleteObject(url) {
     'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
     'X-Amz-Credential': `${credentials.accessKeyId}/${scope}`,
     'X-Amz-Date': now,
-    'X-Amz-Expires': '60',
+    'X-Amz-Expires': '300',
     'X-Amz-SignedHeaders': 'host',
   });
   if (credentials.sessionToken) params.set('X-Amz-Security-Token', credentials.sessionToken);
-  const canonicalQuery = [...params.entries()].sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`).join('&');
+  const canonicalQuery = [...params.entries()]
+    .map(([key, value]) => [encodeURIComponent(key), encodeURIComponent(value)])
+    .sort(([keyA, valueA], [keyB, valueB]) => {
+      if (keyA !== keyB) return keyA < keyB ? -1 : 1;
+      return valueA < valueB ? -1 : valueA > valueB ? 1 : 0;
+    })
+    .map(([key, value]) => `${key}=${value}`)
+    .join('&');
   const canonical = `DELETE\n${parsed.pathname}\n${canonicalQuery}\nhost:${parsed.host}\n\nhost\nUNSIGNED-PAYLOAD`;
   const hash = value => crypto.createHash('sha256').update(value).digest('hex');
   const hmac = (keyBytes, value) => crypto.createHmac('sha256', keyBytes).update(value).digest();
@@ -45,7 +51,7 @@ async function deleteObject(url) {
   const stringToSign = `AWS4-HMAC-SHA256\n${now}\n${scope}\n${hash(canonical)}`;
   params.set('X-Amz-Signature', crypto.createHmac('sha256', signingKey).update(stringToSign).digest('hex'));
   const response = await fetch(`${parsed.origin}${parsed.pathname}?${params}`, { method: 'DELETE' });
-  if (!response.ok) throw new Error(`Could not clean synthetic S3 object (${response.status})`);
+  if (!response.ok) throw new Error(`Could not clean synthetic S3 object (${response.status}): ${await response.text()}`);
 }
 
 const s3Integration = enabled ? describe : describe.skip;
