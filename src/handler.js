@@ -1,3 +1,6 @@
+if (process.env.HARNESS_MODE === 'local') {
+  throw new Error('Local harness cannot run in the Lambda handler');
+}
 const serverless = require('serverless-http');
 const app = require('./app');
 
