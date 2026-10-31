@@ -5,7 +5,7 @@ jest.mock('../../services/entityServiceFactory', () => ({
   createEntityService: (type) => (type === 'candidate' ? mockCandidates : mockJobs),
 }));
 jest.mock('@aws-sdk/credential-provider-node', () => ({
-  fromNodeProviderChain: () => async () => ({ accessKeyId: 'test-key', secretAccessKey: 'test-secret' }),
+  defaultProvider: () => async () => ({ accessKeyId: 'test-key', secretAccessKey: 'test-secret' }),
 }));
 
 const { createDownload } = require('../../services/cvStorageService');
