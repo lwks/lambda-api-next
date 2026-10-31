@@ -31,7 +31,14 @@ async function presign(method, key, contentType, filename) {
   const params = new URLSearchParams({ 'X-Amz-Algorithm': 'AWS4-HMAC-SHA256', 'X-Amz-Credential': `${credentials.accessKeyId}/${scope}`, 'X-Amz-Date': now, 'X-Amz-Expires': '300', 'X-Amz-SignedHeaders': contentType ? 'content-type;host' : 'host' });
   if (credentials.sessionToken) params.set('X-Amz-Security-Token', credentials.sessionToken);
   if (filename) params.set('response-content-disposition', `attachment; filename="${filename.replace(/["\r\n]/g, '')}"`);
-  const canonicalQuery = [...params.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+  const canonicalQuery = [...params.entries()]
+    .map(([key, value]) => [encodeURIComponent(key), encodeURIComponent(value)])
+    .sort(([keyA, valueA], [keyB, valueB]) => {
+      if (keyA !== keyB) return keyA < keyB ? -1 : 1;
+      return valueA < valueB ? -1 : valueA > valueB ? 1 : 0;
+    })
+    .map(([key, value]) => `${key}=${value}`)
+    .join('&');
   const headers = contentType ? `content-type:${contentType}\nhost:${host}\n` : `host:${host}\n`;
   const signedHeaders = contentType ? 'content-type;host' : 'host';
   const canonical = `${method}\n${path}\n${canonicalQuery}\n${headers}\n${signedHeaders}\nUNSIGNED-PAYLOAD`;
