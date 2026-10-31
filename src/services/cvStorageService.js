@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { fromNodeProviderChain } = require('@aws-sdk/credential-provider-node');
+const { defaultProvider } = require('@aws-sdk/credential-provider-node');
 const { ValidationError, NotFoundError, ForbiddenError } = require('../utils/errors');
 const { createEntityService } = require('./entityServiceFactory');
 const { TABLE_NAMES } = require('../config/tableNames');
@@ -22,7 +22,7 @@ function getConfig() {
 
 async function presign(method, key, contentType, filename) {
   const { bucket, region } = getConfig();
-  const credentials = await fromNodeProviderChain()();
+  const credentials = await defaultProvider()();
   const host = `${bucket}.s3.${region}.amazonaws.com`;
   const path = `/${key.split('/').map(encodeURIComponent).join('/')}`;
   const now = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '');
