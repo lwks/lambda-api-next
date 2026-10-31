@@ -72,6 +72,9 @@ function buildUpdateExpression(updates, primaryKey) {
 }
 
 function createEntityService(entityType, providedTableName) {
+  if (require('../harness/config').isLocalHarness()) {
+    return require('../harness/store').createLocalEntityService(entityType);
+  }
   const tableName = ensureTableName(entityType, resolveTableName(entityType, providedTableName));
   const primaryKey = PRIMARY_KEYS[entityType];
   if (!primaryKey) throw new Error(`Unsupported entity type: ${entityType}`);

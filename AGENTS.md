@@ -315,3 +315,13 @@ Se você (Codex) estiver trabalhando no backend para atender este front:
 - Em `GET /jobs`, pode retornar coleção em `data` ou array direto (front suporta ambos).
 - Sempre que possível inclua `cidade` e `estado` para melhorar exibição de localização.
 
+
+## Harness local (atual)
+
+Esta seção complementa o guia histórico de contratos acima. O pipeline do front atual já integra os endpoints de candidaturas, status, anotações e CV.
+
+- Leia `docs/LOCAL_HARNESS.md`. O launcher completo está no repositório irmão `../front-nex-ats`: `npm --prefix ../front-nex-ats run dev:local`.
+- `npm run dev:local` aqui sobe apenas a API com armazenamento local e requer o simulador de autenticação rodando no front.
+- O modo local troca DynamoDB por JSON e S3 por arquivos; nunca remova guards para resolver problemas de navegação. Os perfis são `company`/`COMPANY` e `candidate`/`CANDIDATE`.
+- Preserve o bloqueio de modo local no Lambda handler e em produção. Dados locais ficam em `.harness/`, ignorado pelo Git.
+- Execute `npm test` antes de concluir mudanças. A integração dos dois projetos é validada por `npm --prefix ../front-nex-ats run test:e2e:local` (serviços Next parados antes).
