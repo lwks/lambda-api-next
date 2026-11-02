@@ -21,6 +21,10 @@ const corsMiddleware = (req, res, next) => {
 
 app.use(corsMiddleware);
 
+if (require('./harness/config').isLocalHarness()) {
+  app.use('/__local', require('./harness/cvStorage').fileRouter());
+}
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

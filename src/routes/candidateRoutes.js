@@ -19,7 +19,7 @@ router.get('/:id/cv-download', requireAccountType('COMPANY'), getCvDownload);
 router.get('/', listCandidates);
 router.get('/by-job-guids', requireAccountType('COMPANY'), listCandidatesByJobGuids);
 router.get('/:id', getCandidate);
-router.put('/:id', updateCandidate);
+router.put('/:id', requireAccountType('COMPANY'), updateCandidate);
 router.delete('/:id', deleteCandidate);
 
 module.exports = router;

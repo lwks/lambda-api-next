@@ -99,4 +99,6 @@ async function createDownload(auth, id) {
   return { downloadUrl: urlOf(await presign('GET', candidate.cv.key, null, candidate.cv.filename)), filename: candidate.cv.filename };
 }
 
-module.exports = { createUpload, createDownload, verifyUploadedCv, MAX_CV_BYTES, TYPES };
+module.exports = require('../harness/config').isLocalHarness()
+  ? require('../harness/cvStorage')
+  : { createUpload, createDownload, verifyUploadedCv, MAX_CV_BYTES, TYPES };

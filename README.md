@@ -453,3 +453,9 @@ npm run test:coverage
 4. Use qualquer ferramenta de empacotamento (SAM, Serverless Framework, AWS CDK) apontando para `handler.lambdaHandler`.
 5. Conceda `dynamodb:PutItem`, `GetItem`, `DeleteItem` e `Scan` na tabela `Vagas`, e `Scan` na tabela `Candidaturas`, além das permissões exigidas pelas outras rotas.
 6. O workflow de `develop` atualiza apenas o código, não as variáveis da Lambda. Confira a função, URL, versão, logs no CloudWatch e configuração antes de publicar. Configuração de autenticação ausente retorna `503`, token inválido `401`, provedor indisponível `502` e papel incorreto `403`.
+
+## Harness local com front e back
+
+O modo `dev:local` usa JSON e arquivos locais, com identidades fictícias reconhecidas pelo front e pela API. Para subir tudo, mantenha `front-nex-ats` e `lambda-api-next` em pastas irmãs e execute `npm --prefix ../front-nex-ats run dev:local`. Não exige AWS, Supabase real ou Docker.
+
+Veja [docs/LOCAL_HARNESS.md](docs/LOCAL_HARNESS.md) para dados de exemplo, reset, configuração de portas e testes. As validações de perfil e propriedade continuam ativas; selecione o perfil pela barra amarela no front.

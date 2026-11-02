@@ -20,6 +20,16 @@ async function fetchZipData(zip) {
     throw new ValidationError('CEP inválido. Utilize 8 dígitos, com ou sem hífen.', { zip });
   }
 
+  if (require('../harness/config').isLocalHarness()) {
+    const locations = {
+      '01001000': 'Praça da Sé - Sé - São Paulo/SP',
+      '01310100': 'Avenida Paulista - Bela Vista - São Paulo/SP',
+      '20040002': 'Rua da Assembleia - Centro - Rio de Janeiro/RJ',
+    };
+    if (!locations[sanitizedZip]) throw new NotFoundError(`CEP ${sanitizedZip} não cadastrado no harness local.`);
+    return locations[sanitizedZip];
+  }
+
   const url = `${VIA_CEP_BASE_URL}/${sanitizedZip}/json/`;
   logger.info('Consultando ViaCEP', { zip: sanitizedZip, url });
 
