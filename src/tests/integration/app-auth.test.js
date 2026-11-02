@@ -5,6 +5,8 @@ jest.mock('../../auth/accessTokenVerifier', () => ({
 jest.mock('../../controllers/jobController', () => ({
   createJob: (req, res) => res.status(201).json({ data: { route: 'createJob', auth: req.auth || null } }),
   listJobs: (req, res) => res.json({ data: { route: 'listJobs' } }),
+  listCompanyJobs: (req, res) => res.json({ data: { route: 'listCompanyJobs', auth: req.auth || null } }),
+  closeJob: (req, res) => res.json({ data: { route: 'closeJob', auth: req.auth || null } }),
   getJob: (req, res) => res.json({ data: { route: 'getJob', id: req.params.id } }),
   updateJob: (req, res) => res.json({ data: { route: 'updateJob', auth: req.auth || null } }),
   deleteJob: (req, res) => res.status(204).send(),
@@ -74,6 +76,12 @@ describe('app auth integration', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.data).toEqual({ route: 'listJobs' });
+    expect(verifyAccessToken).not.toHaveBeenCalled();
+  });
+
+  it('protege a listagem privada /api/jobs/mine', async () => {
+    const response = await request(app).get('/api/jobs/mine');
+    expect(response.status).toBe(401);
     expect(verifyAccessToken).not.toHaveBeenCalled();
   });
 

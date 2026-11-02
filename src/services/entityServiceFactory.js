@@ -277,6 +277,59 @@ function createEntityService(entityType, providedTableName) {
     return collectedItems;
   }
 
+  async function listByFieldValue({ field, value }) {
+    const collectedItems = [];
+    let exclusiveStartKey;
+    do {
+      const response = await documentClient.send(new ScanCommand({
+        TableName: tableName,
+        FilterExpression: '#entityType = :entityType AND #field = :value',
+        ExpressionAttributeNames: { '#entityType': 'entityType', '#field': field },
+        ExpressionAttributeValues: { ':entityType': entityType, ':value': value },
+        ...(exclusiveStartKey ? { ExclusiveStartKey: exclusiveStartKey } : {}),
+      }));
+      collectedItems.push(...(response.Items || []));
+      exclusiveStartKey = response.LastEvaluatedKey;
+    } while (exclusiveStartKey);
+    return collectedItems;
+  }
+
+  async function close(id, ownerSub, reason) {
+    const item = await findById(id);
+    if (item.owner_sub !== ownerSub) {
+      const { ForbiddenError } = require('../utils/errors');
+      throw new ForbiddenError('Company does not own this vacancy');
+    }
+    const now = new Date().toISOString();
+    try {
+      const response = await documentClient.send(new UpdateCommand({
+        TableName: tableName,
+        Key: { [primaryKey]: item[primaryKey] },
+        UpdateExpression: 'SET #status = :closed, #closedAt = :closedAt, #updatedAt = :updatedAt'
+          + (reason ? ', #reason = :reason' : ''),
+        ConditionExpression: 'attribute_exists(#primaryKey) AND #id = :expectedId AND #owner = :owner '
+          + 'AND (attribute_not_exists(#status) OR #status <> :closed)',
+        ExpressionAttributeNames: {
+          '#primaryKey': primaryKey, '#id': 'id', '#owner': 'owner_sub', '#status': 'status',
+          '#closedAt': 'encerrada_em', '#updatedAt': 'updatedAt', ...(reason ? { '#reason': 'motivo_encerramento' } : {}),
+        },
+        ExpressionAttributeValues: {
+          ':expectedId': item.id, ':owner': ownerSub, ':closed': 'Encerrada', ':closedAt': now,
+          ':updatedAt': now, ...(reason ? { ':reason': reason } : {}),
+        },
+        ReturnValues: 'ALL_NEW',
+      }));
+      return response.Attributes;
+    } catch (error) {
+      if (error.name === 'ConditionalCheckFailedException') {
+        const conflict = new Error('Vacancy is already closed');
+        conflict.statusCode = 409;
+        throw conflict;
+      }
+      throw error;
+    }
+  }
+
 
   return {
     create,
@@ -285,6 +338,8 @@ function createEntityService(entityType, providedTableName) {
     remove,
     list,
     listByFieldValues,
+    listByFieldValue,
+    close,
   };
 }
 

@@ -1,4 +1,4 @@
-const mockJobs = { create: jest.fn(), update: jest.fn() };
+const mockJobs = { create: jest.fn(), update: jest.fn(), findById: jest.fn() };
 
 jest.mock('../../services/entityServiceFactory', () => ({
   createEntityService: () => mockJobs,
@@ -30,6 +30,7 @@ test('rejects a company context without an identity', async () => {
 });
 
 test('does not permit updating the owner', async () => {
+  mockJobs.findById.mockResolvedValue({ guid_id: 'job-1', owner_sub: 'company-1', status: 'Aberto' });
   mockJobs.update.mockResolvedValue({ guid_id: 'job-1' });
   await updateJob({ params: { id: 'job-1' }, body: { titulo: 'New title', owner_sub: 'attacker' } }, response(), jest.fn());
   expect(mockJobs.update).toHaveBeenCalledWith('job-1', { titulo: 'New title' });

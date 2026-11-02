@@ -6,6 +6,7 @@ const { decodeLastKey, encodeLastKey } = require('../utils/pagination');
 const { ValidationError } = require('../utils/errors');
 const { logger } = require('../utils/logger');
 const cvStorage = require('../services/cvStorageService');
+const jobService = createEntityService('job', TABLE_NAMES.job);
 
 const candidateService = createEntityService('candidate', TABLE_NAMES.candidate);
 
@@ -14,6 +15,8 @@ async function createCandidate(req, res, next) {
     logger.info('Received request to create candidate');
     logger.info('Validating required fields for candidate creation', { requiredFields: ['guid_id', 'guid_vaga'] });
     validateRequiredFields(req.body, ['guid_id', 'guid_vaga']);
+    const job = await jobService.findById(req.body.guid_vaga);
+    if (job.status === 'Encerrada') throw new ValidationError('This vacancy is closed and no longer accepts applications');
     if (req.body.cv) {
       const expectedPrefix = `cvs/${req.auth?.sub}/${req.body.guid_id}.`;
       if (!req.auth?.sub || typeof req.body.cv.key !== 'string' || !req.body.cv.key.startsWith(expectedPrefix)) {
@@ -103,6 +106,15 @@ async function getCandidate(req, res, next) {
 async function updateCandidate(req, res, next) {
   try {
     logger.info('Received request to update candidate', { params: req.params });
+    const existing = await candidateService.findById(req.params.id);
+    if (existing.guid_vaga) {
+      const job = await jobService.findById(existing.guid_vaga);
+      if (job.owner_sub !== req.auth?.sub) {
+        const { ForbiddenError } = require('../utils/errors');
+        throw new ForbiddenError('Company does not own this vacancy');
+      }
+      if (job.status === 'Encerrada') throw new ValidationError('Applications for a closed vacancy are read-only');
+    }
     const candidate = await candidateService.update(req.params.id, req.body);
     logger.info('Candidate updated in DynamoDB', { candidateId: candidate.id });
     return success(res, candidate);

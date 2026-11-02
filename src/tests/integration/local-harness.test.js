@@ -50,6 +50,53 @@ test('keeps anonymous and wrong-profile requests blocked in local mode', async (
   expect(response.body.data.owner_sub).toBe('company');
 });
 
+test('closes a company vacancy once, keeps its reason private, and blocks new or updated applications', async () => {
+  const jobId = 'closed-local-job';
+  const headers = { Authorization: 'Bearer company' };
+  expect((await request(app).post(`/api/jobs/${JOB_ID}/close`).send({})).status).toBe(401);
+  expect((await request(app).post(`/api/jobs/${JOB_ID}/close`).set('Authorization', 'Bearer candidate').send({})).status).toBe(403);
+  expect((await request(app).post('/api/jobs').set(headers).send({ guid_id: jobId, titulo: 'Local close test' })).status).toBe(201);
+
+  const closed = await request(app).post(`/api/jobs/${jobId}/close`).set(headers).send({ motivo_encerramento: 'Contratação concluída' });
+  expect(closed.status).toBe(200);
+  expect(closed.body.data).toMatchObject({ status: 'Encerrada', motivo_encerramento: 'Contratação concluída' });
+  expect(closed.body.data.encerrada_em).toBeTruthy();
+  expect((await request(app).post(`/api/jobs/${jobId}/close`).set(headers).send({})).status).toBe(409);
+  expect((await request(app).put(`/api/jobs/${jobId}`).set(headers).send({ status: 'Aberto' })).status).toBe(409);
+  expect((await request(app).delete(`/api/jobs/${jobId}`).set(headers)).status).toBe(409);
+
+  await request(app).post('/api/jobs').set({ Authorization: 'Bearer other-company' }).send({ guid_id: 'other-owned-job' });
+  expect((await request(app).post('/api/jobs/other-owned-job/close').set(headers).send({})).status).toBe(403);
+  expect((await request(app).post(`/api/jobs/${jobId}/close`).set(headers).send({ motivo_encerramento: 'x'.repeat(1001) })).status).toBe(400);
+
+  await request(app).post('/api/jobs').set(headers).send({ guid_id: 'closed-without-reason' });
+  const noReason = await request(app).post('/api/jobs/closed-without-reason/close').set(headers).send({});
+  expect(noReason.body.data).toMatchObject({ status: 'Encerrada' });
+  expect(noReason.body.data).not.toHaveProperty('motivo_encerramento');
+
+  const mine = await request(app).get('/api/jobs/mine').set(headers);
+  expect(mine.body.data.items.find(job => job.guid_id === jobId).motivo_encerramento).toBe('Contratação concluída');
+  const publicJobs = await request(app).get('/api/jobs');
+  expect(publicJobs.body.data.items.find(job => job.guid_id === jobId)).toMatchObject({ status: 'Encerrada' });
+  expect(publicJobs.body.data.items.find(job => job.guid_id === jobId)).not.toHaveProperty('motivo_encerramento');
+  expect((await request(app).get(`/api/jobs/${jobId}`)).body.data).not.toHaveProperty('motivo_encerramento');
+
+  const newApplication = await request(app).post('/api/candidates').set('Authorization', 'Bearer candidate')
+    .send({ guid_id: 'blocked-application', guid_vaga: jobId });
+  expect(newApplication.status).toBe(400);
+  await request(app).post(`/api/jobs/${JOB_ID}/close`).set(headers).send({});
+  const update = await request(app).put(`/api/candidates/${CANDIDATE_ID}`).set(headers).send({ status: 'contratado' });
+  expect(update.status).toBe(400);
+});
+
+test('company vacancy list is scoped to the authenticated owner', async () => {
+  await request(app).post('/api/jobs').set('Authorization', 'Bearer company').send({ guid_id: 'owned-by-company' });
+  await request(app).post('/api/jobs').set('Authorization', 'Bearer other-company').send({ guid_id: 'owned-by-other' });
+  const result = await request(app).get('/api/jobs/mine').set('Authorization', 'Bearer company');
+  expect(result.body.data.items.map(job => job.guid_id)).toContain('owned-by-company');
+  expect(result.body.data.items.map(job => job.guid_id)).not.toContain('owned-by-other');
+});
+
 test('uploads a CV, creates an application, and enforces company ownership on download', async () => {
   const id = '33333333-3333-4333-8333-333333333333';
   const cv = Buffer.from('%PDF-1.4 local fixture');

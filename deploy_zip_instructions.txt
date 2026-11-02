@@ -74,11 +74,14 @@ Em "Runtime settings", defina:
 Ainda na função:
 - Acesse "Configuration" > "Environment variables".
 - Adicione `CANDIDATE_TABLE_NAME`, `COMPANY_TABLE_NAME`, `USER_TABLE_NAME` e `JOB_TABLE_NAME` com os nomes das respectivas tabelas DynamoDB (ou `TABLE_NAME` como fallback global, se preferir).
+- Adicione `CV_S3_BUCKET=cluster` e confirme que `AWS_REGION` corresponde à região do bucket.
 - Adicione `AWS_REGION` se necessário (o padrão é `us-east-1`).
 
 10. Conceda permissões DynamoDB
 -------------------------------
 Certifique-se de que o role associado à função possua política permitindo `dynamodb:*` (ou o mínimo necessário) para a tabela informada.
+
+Para os currículos, conceda também `s3:PutObject` e `s3:GetObject` apenas em `arn:aws:s3:::cluster/cvs/*`. Mantenha o bucket privado e habilite CORS para o domínio do frontend, método `PUT` e cabeçalho `Content-Type`.
 
 11. Teste a função
 ------------------

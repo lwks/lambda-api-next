@@ -88,6 +88,27 @@ function createLocalEntityService(entityType) {
     async listByFieldValues({ field, values }) {
       return read()[entityType].filter(row => values.includes(row[field]));
     },
+    async listByFieldValue({ field, value }) {
+      return read()[entityType].filter(row => row[field] === value);
+    },
+    async close(id, ownerSub, reason) {
+      const db = read();
+      const item = find(db[entityType], id);
+      if (item.owner_sub !== ownerSub) {
+        const { ForbiddenError } = require('../utils/errors');
+        throw new ForbiddenError('Company does not own this vacancy');
+      }
+      if (item.status === 'Encerrada') {
+        const error = new Error('Vacancy is already closed');
+        error.statusCode = 409;
+        throw error;
+      }
+      const now = new Date().toISOString();
+      Object.assign(item, { status: 'Encerrada', encerrada_em: now, updatedAt: now });
+      if (reason) item.motivo_encerramento = reason;
+      save(db);
+      return item;
+    },
   };
 }
 
