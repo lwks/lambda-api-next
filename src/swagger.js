@@ -64,6 +64,9 @@ const swaggerDefinition = {
             type: 'string',
             example: 'Posição para desenvolvedor Node.js com experiência em AWS.',
           },
+          status: { type: 'string', example: 'Aberto', description: 'Vagas legadas sem status são consideradas abertas; encerradas usam Encerrada.' },
+          encerrada_em: { type: 'string', format: 'date-time' },
+          motivo_encerramento: { type: 'string', maxLength: 1000, description: 'Campo privado, retornado somente na listagem autenticada da empresa.' },
         },
         required: ['guid_id'],
       },
@@ -723,6 +726,35 @@ const swaggerDefinition = {
         responses: {
           204: { $ref: '#/components/responses/NoContent' },
           404: { $ref: '#/components/responses/NotFound' },
+        },
+      },
+    },
+    '/api/jobs/mine': {
+      get: {
+        tags: ['Jobs'],
+        summary: 'Lista vagas da empresa autenticada, incluindo encerradas e seus motivos privados',
+        responses: {
+          200: { description: 'Vagas pertencentes à empresa autenticada' },
+          401: { description: 'Autenticação necessária' },
+          403: { description: 'Acesso restrito ao perfil de empresa' },
+        },
+      },
+    },
+    '/api/jobs/{id}/close': {
+      post: {
+        tags: ['Jobs'],
+        summary: 'Encerra uma vaga da empresa autenticada',
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: false,
+          content: { 'application/json': { schema: { type: 'object', properties: { motivo_encerramento: { type: 'string', maxLength: 1000 } } } } },
+        },
+        responses: {
+          200: { description: 'Vaga encerrada' },
+          400: { $ref: '#/components/responses/ValidationError' },
+          403: { description: 'Vaga não pertence à empresa autenticada' },
+          404: { $ref: '#/components/responses/NotFound' },
+          409: { description: 'Vaga já encerrada' },
         },
       },
     },

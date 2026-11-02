@@ -4,7 +4,7 @@ const { logger } = require('../utils/logger');
 const { randomUUID } = require('crypto');
 
 const DEFAULT_PUBLIC_ROUTES = [
-  { method: 'GET', pattern: /^\/jobs(?:\/[^/]+)?$/ },
+  { method: 'GET', pattern: /^\/jobs(?:\/(?!mine$)[^/]+)?$/ },
   { method: 'GET', pattern: /^\/zips\/[^/]+$/ },
 ];
 
