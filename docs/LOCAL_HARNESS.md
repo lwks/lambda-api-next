@@ -31,7 +31,9 @@ O adaptador de CV retorna URLs locais assinadas com duração de cinco minutos, 
 
 `npm test` inclui testes de CRUD/paginação local, permissões, upload/download de CV, CEP offline e bloqueio do harness em produção/Lambda. O teste S3 real existente exige configuração própria e continua opcional.
 
-Execute `npm --prefix ../front-nex-ats run test:e2e:local` para testar os dois projetos juntos; adicione `-- api.spec.ts` para integração HTTP sem Chromium. O E2E usa `.harness/e2e`, separado dos dados de desenvolvimento, e portas 3100/3101/54330.
+Execute `npm --prefix ../front-nex-ats run test:e2e:local` para testar os dois projetos juntos. O cenário `profile-reuse.spec.ts` usa Chromium para validar perfil salvo, revisão, reutilização e bloqueio de duplicidade. O E2E usa `.harness/e2e`, separado dos dados de desenvolvimento, e portas 3100/3101/54330.
+
+O armazenamento JSON agora inclui `profile`, equivalente local da tabela `candidato_perfil` com chave `candidato_sub`. Novas candidaturas preservam snapshot e versão do CV; a ação `REMOVE` omite o arquivo apenas da candidatura. O aceite LGPD deve ser renovado após 21 dias, e o compartilhamento é confirmado a cada envio. O harness simula as condições de versão e unicidade em um único processo.
 
 O modo só é permitido em development/test, recusa URL de autenticação remota e runtimes Lambda/Netlify/Vercel. O handler Lambda recusa `HARNESS_MODE=local` antes de carregar o app. `npm run dev` e o handler normal mantêm os serviços reais e suas configurações existentes.
 

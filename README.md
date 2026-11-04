@@ -56,7 +56,7 @@ export AWS_REGION=us-east-1
 export CV_S3_BUCKET=cluster
 ```
 
-CV storage uses private S3 objects under `cvs/`. Set `CV_S3_BUCKET=cluster` on the Lambda and grant its execution role `s3:PutObject` and `s3:GetObject` on `arn:aws:s3:::cluster/cvs/*`. Keep S3 Block Public Access enabled. Configure bucket CORS to allow the frontend origin to issue `PUT` requests with the `Content-Type` header and expose `ETag`. The Lambda checks uploaded object size and content type before saving the CV reference.
+CV storage uses private S3 objects under `cvs/`. Set `CV_S3_BUCKET=cluster` on the Lambda and grant its execution role `s3:PutObject` and `s3:GetObject` on `arn:aws:s3:::cluster/cvs/*`. Keep S3 Block Public Access enabled. Configure bucket CORS to allow the frontend origin to issue `PUT` requests with the `Content-Type` and `If-None-Match` headers and expose `ETag`. The Lambda checks uploaded object size and content type before saving the CV reference.
 
 ### Supabase Auth
 
@@ -448,7 +448,7 @@ npm run test:coverage
 ## Deploy na AWS Lambda
 
 1. Garanta que o pacote contenha `src/handler.js` e configure `CANDIDATE_TABLE_NAME`, `COMPANY_TABLE_NAME`, `USER_TABLE_NAME` e `JOB_TABLE_NAME` se os nomes das tabelas diferirem dos padrões.
-2. Configure a runtime para **Node.js 20.x** (compatível com 22.x).
+2. Configure a runtime para **Node.js 22.x** ou superior.
 3. Configure `AUTH_PROVIDER=supabase`, `SUPABASE_URL` e `SUPABASE_PUBLISHABLE_KEY` na Lambda que atende à URL do front. Para Cognito, use `AUTH_PROVIDER=cognito`, `COGNITO_REGION`, `COGNITO_USER_POOL_ID` e `COGNITO_APP_CLIENT_ID`.
 4. Use qualquer ferramenta de empacotamento (SAM, Serverless Framework, AWS CDK) apontando para `handler.lambdaHandler`.
 5. Conceda `dynamodb:PutItem`, `GetItem`, `DeleteItem` e `Scan` na tabela `Vagas`, e `Scan` na tabela `Candidaturas`, além das permissões exigidas pelas outras rotas.
@@ -459,3 +459,11 @@ npm run test:coverage
 O modo `dev:local` usa JSON e arquivos locais, com identidades fictícias reconhecidas pelo front e pela API. Para subir tudo, mantenha `front-nex-ats` e `lambda-api-next` em pastas irmãs e execute `npm --prefix ../front-nex-ats run dev:local`. Não exige AWS, Supabase real ou Docker.
 
 Veja [docs/LOCAL_HARNESS.md](docs/LOCAL_HARNESS.md) para dados de exemplo, reset, configuração de portas e testes. As validações de perfil e propriedade continuam ativas; selecione o perfil pela barra amarela no front.
+
+## Perfil reutilizável e candidaturas
+
+A tabela DynamoDB `candidato_perfil` usa chave de partição String `candidato_sub`. Configure `CANDIDATE_PROFILE_TABLE_NAME=candidato_perfil` na Lambda. A chave é derivada exclusivamente do `sub` do token autenticado; os clientes não escolhem a identidade. A tabela existente `Candidaturas` continua usando `guid_id` como chave. Para as novas operações, o papel da Lambda precisa de `dynamodb:GetItem` e `dynamodb:PutItem` nas tabelas `candidato_perfil` e `Candidaturas`, além de `dynamodb:ConditionCheckItem` nas tabelas `candidato_perfil` e `Vagas`; mantenha também as permissões de leitura e atualização já utilizadas. As tabelas devem estar na mesma conta e região da transação.
+
+Rotas de candidato: `GET/PUT /api/candidates/me/profile`, `POST /api/candidates/me/cv-upload`, `GET /api/candidates/me/applications?guid_vaga=<id>` e `POST /api/candidates/applications`. O perfil registra `version`, `lgpdAccepted` e `lgpdAcceptedAt`; novo aceite é obrigatório após 21 dias. O envio exige confirmação de compartilhamento por candidatura. `USE_SAVED_PROFILE` reutiliza os dados e `UPDATE_PROFILE` atualiza o perfil; `profileVersion` protege contra alterações concorrentes. A candidatura usa um UUID estável derivado do `sub` e da vaga, com gravação condicional para impedir duplicidade. Uma transação verifica a vaga aberta e grava perfil e candidatura de forma atômica.
+
+Cada versão nova de CV recebe chave `cvs/{sub}/profile/{uuid}.{ext}`. O upload novo exige o cabeçalho assinado `If-None-Match: *`, que impede sobrescrever um objeto já existente; inclua `If-None-Match` nos cabeçalhos permitidos pelo CORS do bucket. `KEEP` usa o CV do perfil, `REPLACE` atualiza o perfil e a nova candidatura, e `REMOVE` envia a candidatura sem CV sem alterar o perfil. Candidaturas antigas não são associadas automaticamente a contas por nome, documento ou e-mail. A rota antiga `POST /api/candidates` permanece para clientes anteriores, mas passa pelas regras de identidade e unicidade. O harness local simula as operações com JSON e arquivos; não comprova IAM, transações DynamoDB distribuídas nem assinatura S3 real.

@@ -81,9 +81,11 @@ test('closes a company vacancy once, keeps its reason private, and blocks new or
   expect(publicJobs.body.data.items.find(job => job.guid_id === jobId)).not.toHaveProperty('motivo_encerramento');
   expect((await request(app).get(`/api/jobs/${jobId}`)).body.data).not.toHaveProperty('motivo_encerramento');
 
-  const newApplication = await request(app).post('/api/candidates').set('Authorization', 'Bearer candidate')
-    .send({ guid_id: 'blocked-application', guid_vaga: jobId });
-  expect(newApplication.status).toBe(400);
+  const newApplication = await request(app).post('/api/candidates/applications').set('Authorization', 'Bearer candidate')
+    .send({ guid_vaga: jobId, mode: 'UPDATE_PROFILE', application: {
+      mensagemEmpresa: '', pretensaoSalarial: '10000', compartilhamentoAccepted: true, cvAction: 'KEEP', lgpdAccepted: true,
+    }, profile: {} });
+  expect(newApplication.status).toBe(409);
   await request(app).post(`/api/jobs/${JOB_ID}/close`).set(headers).send({});
   const update = await request(app).put(`/api/candidates/${CANDIDATE_ID}`).set(headers).send({ status: 'contratado' });
   expect(update.status).toBe(400);
@@ -105,17 +107,24 @@ test('uploads a CV, creates an application, and enforces company ownership on do
   expect(prepared.status).toBe(200);
   const url = new URL(prepared.body.data.uploadUrl);
   expect((await request(app).put(url.pathname + url.search).set('Content-Type', 'application/pdf').send(cv)).status).toBe(200);
+  const { PROFILE_FIELDS } = require('../../services/candidateApplicationService');
+  const profile = Object.fromEntries(PROFILE_FIELDS.filter(field => !['indicacao', 'indicacoes'].includes(field))
+    .map(field => [field, ['beneficiosAtuais', 'timeAtual', 'industriaInteresse', 'hardSkillsProfissionais', 'softSkillsProfissionais',
+      'tipoContratacao', 'modeloTrabalho', 'setor', 'time', 'senioridadePreferencia', 'areaPreferencia', 'idiomas', 'hardSkills', 'softSkills'].includes(field) ? ['1'] : 'Candidate']));
   const created = await request(app).post('/api/candidates').set('Authorization', 'Bearer candidate')
-    .send({ guid_id: id, guid_vaga: JOB_ID, nome: 'Candidate', cv: { key: prepared.body.data.key, filename: 'test.pdf', contentType: 'application/pdf' } });
+    .send({ guid_id: id, guid_vaga: JOB_ID, ...profile, pretensaoSalarial: '10000', mensagemEmpresa: '',
+      compartilhamentoAccepted: true, lgpdAccepted: true,
+      cv: { key: prepared.body.data.key, filename: 'test.pdf', contentType: 'application/pdf' } });
   expect(created.status).toBe(201);
-  const downloaded = await request(app).get(`/api/candidates/${id}/cv-download`).set('Authorization', 'Bearer company');
+  const applicationId = created.body.data.guid_id;
+  const downloaded = await request(app).get(`/api/candidates/${applicationId}/cv-download`).set('Authorization', 'Bearer company');
   expect(downloaded.status).toBe(200);
   const downloadUrl = new URL(downloaded.body.data.downloadUrl);
   const file = await request(app).get(downloadUrl.pathname + downloadUrl.search);
   expect(file.status).toBe(200);
   expect(file.body).toEqual(cv);
-  expect((await request(app).get(`/api/candidates/${id}/cv-download`).set('Authorization', 'Bearer other-company')).status).toBe(403);
-  expect((await request(app).get(`/api/candidates/${id}/cv-download`).set('Authorization', 'Bearer candidate')).status).toBe(403);
+  expect((await request(app).get(`/api/candidates/${applicationId}/cv-download`).set('Authorization', 'Bearer other-company')).status).toBe(403);
+  expect((await request(app).get(`/api/candidates/${applicationId}/cv-download`).set('Authorization', 'Bearer candidate')).status).toBe(403);
   expect((await request(app).get(downloadUrl.pathname + downloadUrl.search.replace('signature=', 'signature=0'))).status).toBe(403);
   expect((await request(app).get(url.pathname + url.search)).status).toBe(403);
 });
@@ -138,4 +147,110 @@ test('serves deterministic CEP fixtures without a network service', async () => 
   expect(await getLocationByZip('01001-000')).toContain('São Paulo/SP');
   await expect(getLocationByZip('00000000')).rejects.toMatchObject({ statusCode: 404 });
   await expect(getLocationByZip('invalid')).rejects.toMatchObject({ statusCode: 400 });
+});
+
+function completeProfile(name = 'Candidate Local') {
+  const { PROFILE_FIELDS } = require('../../services/candidateApplicationService');
+  const arrays = new Set(['beneficiosAtuais', 'timeAtual', 'industriaInteresse', 'hardSkillsProfissionais', 'softSkillsProfissionais',
+    'tipoContratacao', 'modeloTrabalho', 'setor', 'time', 'senioridadePreferencia', 'areaPreferencia', 'idiomas', 'hardSkills', 'softSkills']);
+  return Object.fromEntries(PROFILE_FIELDS.filter(field => !['indicacao', 'indicacoes'].includes(field))
+    .map(field => [field, arrays.has(field) ? ['1'] : name]));
+}
+
+test('creates own profile and immutable application snapshots, then reuses without refilling', async () => {
+  const candidate = { Authorization: 'Bearer candidate' };
+  const company = { Authorization: 'Bearer company' };
+  await request(app).post('/api/jobs').set(company).send({ guid_id: 'second-job', status: 'Aberto' });
+  expect((await request(app).get('/api/candidates/me/profile').set(candidate)).body.data).toBeNull();
+  const first = await request(app).post('/api/candidates/applications').set(candidate).send({ guid_vaga: JOB_ID, mode: 'UPDATE_PROFILE',
+    profile: completeProfile('First Name'), application: { mensagemEmpresa: 'First', pretensaoSalarial: '10000',
+      compartilhamentoAccepted: true, lgpdAccepted: true, cvAction: 'KEEP' } });
+  expect(first.status).toBe(201);
+  expect(first.body.data).toMatchObject({ candidate_sub: 'candidate', nome: 'First Name', profile_version: 1 });
+  const profile = (await request(app).get('/api/candidates/me/profile').set(candidate)).body.data;
+  expect(profile).toMatchObject({ nome: 'First Name', version: 1, lgpdRenewalRequired: false });
+  expect(profile).not.toHaveProperty('candidato_sub');
+  const second = await request(app).post('/api/candidates/applications').set(candidate).send({ guid_vaga: 'second-job',
+    mode: 'USE_SAVED_PROFILE', profileVersion: 1, application: { mensagemEmpresa: 'Second', pretensaoSalarial: '12000',
+      compartilhamentoAccepted: true, cvAction: 'KEEP' } });
+  expect(second.status).toBe(201);
+  expect(second.body.data).toMatchObject({ nome: 'First Name', profile_version: 1, mensagemEmpresa: 'Second' });
+  const updated = await request(app).put('/api/candidates/me/profile').set(candidate)
+    .send({ version: 1, profile: completeProfile('Updated Name') });
+  expect(updated.status).toBe(200);
+  expect(updated.body.data.version).toBe(2);
+  expect((await request(app).get(`/api/candidates/${first.body.data.guid_id}`).set(company)).body.data.nome).toBe('First Name');
+  expect((await request(app).get('/api/candidates/me/applications?guid_vaga=second-job').set(candidate)).body.data.guid_id)
+    .toBe(second.body.data.guid_id);
+  expect((await request(app).put('/api/candidates/me/profile').set(candidate).send({ version: 1, profile: completeProfile() })).status).toBe(409);
+});
+
+test('rejects duplicate submissions and renews LGPD after 21 days', async () => {
+  const candidate = { Authorization: 'Bearer candidate' };
+  const payload = { guid_vaga: JOB_ID, mode: 'UPDATE_PROFILE', profile: completeProfile(),
+    application: { mensagemEmpresa: '', pretensaoSalarial: '10000', compartilhamentoAccepted: true,
+      lgpdAccepted: true, cvAction: 'KEEP' } };
+  const [a, b] = await Promise.all([request(app).post('/api/candidates/applications').set(candidate).send(payload),
+    request(app).post('/api/candidates/applications').set(candidate).send(payload)]);
+  expect([a.status, b.status].sort()).toEqual([201, 409]);
+  expect(read().candidate.filter(row => row.candidate_sub === 'candidate')).toHaveLength(1);
+  const db = read(); db.profile[0].lgpdAcceptedAt = '2020-01-01T00:00:00.000Z'; save(db);
+  await request(app).post('/api/jobs').set('Authorization', 'Bearer company').send({ guid_id: 'renew-job', status: 'Aberto' });
+  const reuse = { guid_vaga: 'renew-job', mode: 'USE_SAVED_PROFILE', profileVersion: 1,
+    application: { mensagemEmpresa: '', pretensaoSalarial: '10000', compartilhamentoAccepted: true, cvAction: 'REMOVE' } };
+  expect((await request(app).post('/api/candidates/applications').set(candidate).send(reuse)).status).toBe(400);
+  const renewed = await request(app).post('/api/candidates/applications').set(candidate)
+    .send({ ...reuse, application: { ...reuse.application, lgpdAccepted: true } });
+  expect(renewed.status).toBe(201);
+  expect(renewed.body.data.profile_version).toBe(2);
+  expect(renewed.body.data).not.toHaveProperty('cv');
+});
+
+test('limits company reads to owned vacancies, including historical records', async () => {
+  expect((await request(app).get(`/api/candidates/${CANDIDATE_ID}`).set('Authorization', 'Bearer other-company')).status).toBe(403);
+  expect((await request(app).get('/api/candidates/by-job-guids?guid_vaga=' + JOB_ID).set('Authorization', 'Bearer other-company')).status).toBe(403);
+  expect((await request(app).delete(`/api/candidates/${CANDIDATE_ID}`).set('Authorization', 'Bearer company')).status).toBe(403);
+  expect((await request(app).get(`/api/candidates/${CANDIDATE_ID}`).set('Authorization', 'Bearer company')).status).toBe(200);
+});
+
+test('replaces profile CV with a new key and omits it from one application without erasing profile CV', async () => {
+  const candidate = { Authorization: 'Bearer candidate' };
+  const company = { Authorization: 'Bearer company' };
+  await request(app).post('/api/jobs').set(company).send({ guid_id: 'cv-second-job', status: 'Aberto' });
+  const bytes = Buffer.from('%PDF-1.4 profile fixture');
+  const prepared = await request(app).post('/api/candidates/me/cv-upload').set(candidate)
+    .send({ filename: 'profile.pdf', contentType: 'application/pdf', size: bytes.length });
+  expect(prepared.status).toBe(200);
+  const url = new URL(prepared.body.data.uploadUrl);
+  expect((await request(app).put(url.pathname + url.search).set('Content-Type', 'application/pdf').set('If-None-Match', '*').send(bytes)).status).toBe(200);
+  expect((await request(app).put(url.pathname + url.search).set('Content-Type', 'application/pdf').set('If-None-Match', '*').send(bytes)).status).toBe(412);
+  const cv = { key: prepared.body.data.key, filename: 'profile.pdf', contentType: 'application/pdf', size: bytes.length };
+  const first = await request(app).post('/api/candidates/applications').set(candidate).send({ guid_vaga: JOB_ID,
+    mode: 'UPDATE_PROFILE', profile: completeProfile(), application: { mensagemEmpresa: '', pretensaoSalarial: '10000',
+      compartilhamentoAccepted: true, lgpdAccepted: true, cvAction: 'REPLACE', cv } });
+  expect(first.status).toBe(201);
+  expect(first.body.data.cv.key).toBe(cv.key);
+  const second = await request(app).post('/api/candidates/applications').set(candidate).send({ guid_vaga: 'cv-second-job',
+    mode: 'USE_SAVED_PROFILE', profileVersion: 1, application: { mensagemEmpresa: '', pretensaoSalarial: '10000',
+      compartilhamentoAccepted: true, cvAction: 'REMOVE' } });
+  expect(second.status).toBe(201);
+  expect(second.body.data).not.toHaveProperty('cv');
+  expect((await request(app).get('/api/candidates/me/profile').set(candidate)).body.data.cv.key).toBe(cv.key);
+  expect((await request(app).get(`/api/candidates/${first.body.data.guid_id}/cv-download`).set(company)).status).toBe(200);
+  expect((await request(app).get(`/api/candidates/${second.body.data.guid_id}/cv-download`).set(company)).status).toBe(404);
+  await request(app).post('/api/jobs').set(company).send({ guid_id: 'cv-third-job', status: 'Aberto' });
+  const replacement = await request(app).post('/api/candidates/me/cv-upload').set(candidate)
+    .send({ filename: 'new.pdf', contentType: 'application/pdf', size: bytes.length });
+  const replacementUrl = new URL(replacement.body.data.uploadUrl);
+  expect((await request(app).put(replacementUrl.pathname + replacementUrl.search)
+    .set('Content-Type', 'application/pdf').set('If-None-Match', '*').send(bytes)).status).toBe(200);
+  const third = await request(app).post('/api/candidates/applications').set(candidate).send({ guid_vaga: 'cv-third-job',
+    mode: 'USE_SAVED_PROFILE', profileVersion: 1, application: { mensagemEmpresa: '', pretensaoSalarial: '10000',
+      compartilhamentoAccepted: true, cvAction: 'REPLACE',
+      cv: { key: replacement.body.data.key, filename: 'new.pdf', contentType: 'application/pdf', size: bytes.length } } });
+  expect(third.status).toBe(201);
+  expect(third.body.data.profile_version).toBe(2);
+  expect((await request(app).get('/api/candidates/me/profile').set(candidate)).body.data.cv.key).toBe(replacement.body.data.key);
+  expect((await request(app).get(`/api/candidates/${first.body.data.guid_id}`).set(company)).body.data.cv.key).toBe(cv.key);
+  expect((await request(app).get(`/api/candidates/${first.body.data.guid_id}/cv-download`).set(company)).status).toBe(200);
 });

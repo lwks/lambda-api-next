@@ -14,7 +14,7 @@ const TYPES = {
 };
 const secret = crypto.randomBytes(32);
 const root = path.join(dataDirectory, 'uploads');
-const keyPattern = /^cvs\/[A-Za-z0-9_-]+\/[0-9a-f-]{36}\.(pdf|doc|docx)$/i;
+const keyPattern = /^cvs\/[A-Za-z0-9_-]+\/(?:profile\/)?[0-9a-f-]{36}\.(pdf|doc|docx)$/i;
 
 function filenameFor(key) {
   if (typeof key !== 'string' || !keyPattern.test(key)) throw new ValidationError('Invalid CV key');
@@ -23,8 +23,8 @@ function filenameFor(key) {
 
 function sign(payload) { return crypto.createHmac('sha256', secret).update(payload).digest('hex'); }
 
-function urlFor(method, key, contentType, filename) {
-  const payload = Buffer.from(JSON.stringify({ method, key, contentType, filename, expires: Date.now() + 300000 })).toString('base64url');
+function urlFor(method, key, contentType, filename, ifNoneMatch = false) {
+  const payload = Buffer.from(JSON.stringify({ method, key, contentType, filename, ifNoneMatch, expires: Date.now() + 300000 })).toString('base64url');
   return `http://localhost:${process.env.PORT || 3001}/__local/files?payload=${payload}&signature=${sign(payload)}`;
 }
 
@@ -64,6 +64,16 @@ async function createUpload(auth, input) {
   return { uploadUrl: urlFor('PUT', key, format.type), key, contentType: format.type, maxBytes: MAX_CV_BYTES };
 }
 
+async function createProfileUpload(auth, input) {
+  if (!auth?.sub) throw new ForbiddenError('Authenticated candidate identity missing');
+  const format = TYPES[String(input.filename || '').split('.').pop().toLowerCase()];
+  if (!format || format.type !== input.contentType) throw new ValidationError('CV must be a PDF, DOC, or DOCX file');
+  if (!Number.isInteger(input.size) || input.size < 1 || input.size > MAX_CV_BYTES) throw new ValidationError('CV file must be no larger than 5 MB');
+  const key = `cvs/${auth.sub}/profile/${crypto.randomUUID()}.${format.ext}`;
+  return { uploadUrl: urlFor('PUT', key, format.type, null, true), key, contentType: format.type,
+    requiredHeaders: { 'If-None-Match': '*' }, maxBytes: MAX_CV_BYTES };
+}
+
 async function verifyUploadedCv(cv) {
   if (!cv || typeof cv.filename !== 'string') throw new ValidationError('Invalid CV reference');
   const format = TYPES[cv.filename.split('.').pop().toLowerCase()];
@@ -99,6 +109,12 @@ function fileRouter() {
       if (grant.method !== req.method || grant.expires < Date.now()) throw new ForbiddenError('Expired or invalid local file grant');
       if (req.method === 'PUT') {
         if (!Buffer.isBuffer(req.body) || !req.body.length || req.get('Content-Type') !== grant.contentType) throw new ValidationError('Invalid CV upload');
+        if (grant.ifNoneMatch) {
+          if (req.get('If-None-Match') !== '*') throw new ValidationError('Conditional CV upload header missing');
+          if (fs.existsSync(filenameFor(grant.key))) {
+            const error = new Error('CV already exists'); error.statusCode = 412; throw error;
+          }
+        }
         writeFile(grant.key, grant.contentType, req.body);
         return res.status(200).end();
       }
@@ -111,4 +127,4 @@ function fileRouter() {
   return router;
 }
 
-module.exports = { createUpload, verifyUploadedCv, createDownload, fileRouter, initializeCv, MAX_CV_BYTES, TYPES };
+module.exports = { createUpload, createProfileUpload, verifyUploadedCv, createDownload, fileRouter, initializeCv, MAX_CV_BYTES, TYPES };

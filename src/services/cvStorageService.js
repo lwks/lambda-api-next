@@ -20,7 +20,7 @@ function getConfig() {
   return { bucket, region };
 }
 
-async function presign(method, key, contentType, filename) {
+async function presign(method, key, contentType, filename, ifNoneMatch = false) {
   const { bucket, region } = getConfig();
   const credentials = await defaultProvider()();
   const host = `${bucket}.s3.${region}.amazonaws.com`;
@@ -28,7 +28,8 @@ async function presign(method, key, contentType, filename) {
   const now = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '');
   const date = now.slice(0, 8);
   const scope = `${date}/${region}/s3/aws4_request`;
-  const params = new URLSearchParams({ 'X-Amz-Algorithm': 'AWS4-HMAC-SHA256', 'X-Amz-Credential': `${credentials.accessKeyId}/${scope}`, 'X-Amz-Date': now, 'X-Amz-Expires': '300', 'X-Amz-SignedHeaders': contentType ? 'content-type;host' : 'host' });
+  const signedHeaders = contentType ? (ifNoneMatch ? 'content-type;host;if-none-match' : 'content-type;host') : 'host';
+  const params = new URLSearchParams({ 'X-Amz-Algorithm': 'AWS4-HMAC-SHA256', 'X-Amz-Credential': `${credentials.accessKeyId}/${scope}`, 'X-Amz-Date': now, 'X-Amz-Expires': '300', 'X-Amz-SignedHeaders': signedHeaders });
   if (credentials.sessionToken) params.set('X-Amz-Security-Token', credentials.sessionToken);
   if (filename) params.set('response-content-disposition', `attachment; filename="${filename.replace(/["\r\n]/g, '')}"`);
   const canonicalQuery = [...params.entries()]
@@ -39,8 +40,7 @@ async function presign(method, key, contentType, filename) {
     })
     .map(([key, value]) => `${key}=${value}`)
     .join('&');
-  const headers = contentType ? `content-type:${contentType}\nhost:${host}\n` : `host:${host}\n`;
-  const signedHeaders = contentType ? 'content-type;host' : 'host';
+  const headers = contentType ? `content-type:${contentType}\nhost:${host}\n${ifNoneMatch ? 'if-none-match:*\n' : ''}` : `host:${host}\n`;
   const canonical = `${method}\n${path}\n${canonicalQuery}\n${headers}\n${signedHeaders}\nUNSIGNED-PAYLOAD`;
   const hash = value => crypto.createHash('sha256').update(value).digest('hex');
   const hmac = (keyBytes, value) => crypto.createHmac('sha256', keyBytes).update(value).digest();
@@ -68,13 +68,24 @@ async function createUpload(auth, input) {
   return { uploadUrl: urlOf(signed), key, contentType: format.type, maxBytes: MAX_CV_BYTES };
 }
 
+async function createProfileUpload(auth, input) {
+  if (!auth?.sub) throw new ForbiddenError('Authenticated candidate identity missing');
+  const ext = String(input.filename || '').split('.').pop().toLowerCase();
+  const format = TYPES[ext];
+  if (!format || input.contentType !== format.type) throw new ValidationError('CV must be a PDF, DOC, or DOCX file');
+  if (!Number.isInteger(input.size) || input.size < 1 || input.size > MAX_CV_BYTES) throw new ValidationError('CV file must be no larger than 5 MB');
+  const key = `cvs/${auth.sub}/profile/${crypto.randomUUID()}.${format.ext}`;
+  return { uploadUrl: urlOf(await presign('PUT', key, format.type, null, true)), key, contentType: format.type,
+    requiredHeaders: { 'If-None-Match': '*' }, maxBytes: MAX_CV_BYTES };
+}
+
 async function verifyUploadedCv(cv) {
   if (!cv || typeof cv.key !== 'string' || typeof cv.filename !== 'string') {
     throw new ValidationError('Invalid CV reference');
   }
   const ext = cv.filename.split('.').pop().toLowerCase();
   const format = TYPES[ext];
-  if (!format || cv.contentType !== format.type || !/^cvs\/[A-Za-z0-9_-]+\/[0-9a-f-]{36}\.(pdf|doc|docx)$/i.test(cv.key)) {
+  if (!format || cv.contentType !== format.type || !/^cvs\/[A-Za-z0-9_-]+\/(?:profile\/)?[0-9a-f-]{36}\.(pdf|doc|docx)$/i.test(cv.key)) {
     throw new ValidationError('Invalid CV reference');
   }
   const head = await presign('HEAD', cv.key);
@@ -101,4 +112,4 @@ async function createDownload(auth, id) {
 
 module.exports = require('../harness/config').isLocalHarness()
   ? require('../harness/cvStorage')
-  : { createUpload, createDownload, verifyUploadedCv, MAX_CV_BYTES, TYPES };
+  : { createUpload, createProfileUpload, createDownload, verifyUploadedCv, MAX_CV_BYTES, TYPES };
