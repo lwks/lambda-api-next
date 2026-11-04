@@ -10,6 +10,7 @@ jest.mock('../../services/entityServiceFactory', () => ({
 
 const request = require('supertest');
 const app = require('../../app');
+const cvStorage = require('../../services/cvStorageService');
 const { verifyAccessToken } = require('../../auth/accessTokenVerifier');
 const enabled = process.env.RUN_S3_INTEGRATION === '1';
 const candidateId = crypto.randomUUID();
@@ -66,7 +67,6 @@ s3Integration('real S3 CV integration', () => {
 
   beforeEach(() => {
     verifyAccessToken.mockReset().mockResolvedValue({ sub: candidateSub, accountType: 'CANDIDATE' });
-    mockCandidates.create.mockReset().mockImplementation(async body => body);
     mockCandidates.findById.mockReset();
     mockJobs.findById.mockReset().mockResolvedValue({ owner_sub: companySub });
   });
@@ -80,19 +80,20 @@ s3Integration('real S3 CV integration', () => {
   });
 
   test('uploads, verifies, downloads, and removes a synthetic CV in S3', async () => {
-    const upload = await request(app).post('/api/candidates/cv-upload').set({ Authorization: 'Bearer synthetic' })
-      .send({ candidateId, filename, contentType, size: content.length });
+    const upload = await request(app).post('/api/candidates/me/cv-upload').set({ Authorization: 'Bearer synthetic' })
+      .send({ filename, contentType, size: content.length });
     expect(upload.status).toBe(200);
     objectKey = upload.body.data.key;
 
-    const put = await fetch(upload.body.data.uploadUrl, { method: 'PUT', headers: { 'content-type': contentType }, body: content });
+    const put = await fetch(upload.body.data.uploadUrl, { method: 'PUT',
+      headers: { 'content-type': contentType, 'if-none-match': '*' }, body: content });
     expect(put.status).toBe(200);
+    const overwrite = await fetch(upload.body.data.uploadUrl, { method: 'PUT',
+      headers: { 'content-type': contentType, 'if-none-match': '*' }, body: content });
+    expect(overwrite.status).toBe(412);
 
     const cv = { key: objectKey, filename, contentType };
-    const created = await request(app).post('/api/candidates').set({ Authorization: 'Bearer synthetic' })
-      .send({ guid_id: candidateId, guid_vaga: 'synthetic-job', cv });
-    expect(created.status).toBe(201);
-    expect(mockCandidates.create).toHaveBeenCalledWith(expect.objectContaining({ cv }));
+    await cvStorage.verifyUploadedCv(cv);
 
     verifyAccessToken.mockResolvedValue({ sub: companySub, accountType: 'COMPANY' });
     mockCandidates.findById.mockResolvedValue({ guid_vaga: 'synthetic-job', cv });

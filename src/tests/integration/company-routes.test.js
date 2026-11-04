@@ -4,6 +4,7 @@ jest.mock('../../services/entityServiceFactory', () => ({
   createEntityService: jest.fn((type) => ({
     create: jest.fn(async (payload) => ({ id: `${type}-test-id`, ...payload })),
     listByFieldValues: jest.fn(async () => []),
+    findById: jest.fn(async id => ({ guid_id: id, owner_sub: 'company-1' })),
   })),
 }));
 

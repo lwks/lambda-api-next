@@ -26,6 +26,7 @@ function seed() {
       cv: { key: `cvs/candidate/${CANDIDATE_ID}.pdf`, filename: 'curriculo-local.pdf', contentType: 'application/pdf' } }],
     company: [{ ...dates, id: 'local-company', cd_cnpj: '00000000000100', entityType: 'company', nome: 'Empresa Local' }],
     user: [],
+    profile: [],
   };
 }
 
