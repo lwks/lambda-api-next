@@ -73,36 +73,14 @@ test('CV routes enforce authentication and account type', async () => {
   expect(mockCandidates.findById).not.toHaveBeenCalled();
 });
 
-test('POST /candidates verifies S3 HEAD before persisting a CV reference', async () => {
-  global.fetch.mockResolvedValue({ status: 200, ok: true, headers: new Headers({ 'content-length': '1024', 'content-type': 'application/pdf' }) });
-  const response = await request(app).post('/api/candidates').set(bearer)
-    .send({ guid_id: candidateId, guid_vaga: 'job-1', cv });
-
-  expect(response.status).toBe(201);
-  expect(mockCandidates.create).toHaveBeenCalledWith(expect.objectContaining({ cv }));
-  const [url, options] = global.fetch.mock.calls[0];
-  expect(options).toEqual({ method: 'HEAD' });
-  expect(new URL(url).pathname).toBe(`/${cv.key}`);
-});
-
-test.each([
-  [{ status: 404, ok: false }, 'CV upload was not found'],
-  [{ status: 200, ok: true, headers: new Headers({ 'content-length': '5242881', 'content-type': 'application/pdf' }) }, 'Uploaded CV must match the allowed type and be no larger than 5 MB'],
-])('POST /candidates rejects an invalid S3 object before persisting', async (head, message) => {
-  global.fetch.mockResolvedValue(head);
-  const response = await request(app).post('/api/candidates').set(bearer)
-    .send({ guid_id: candidateId, guid_vaga: 'job-1', cv });
-  expect(response.status).toBe(400);
-  expect(response.body.message).toBe(message);
-  expect(mockCandidates.create).not.toHaveBeenCalled();
-});
-
-test('POST /candidates rejects another candidate CV key without contacting S3', async () => {
-  const response = await request(app).post('/api/candidates').set(bearer)
-    .send({ guid_id: candidateId, guid_vaga: 'job-1', cv: { ...cv, key: `cvs/other/${candidateId}.pdf` } });
-  expect(response.status).toBe(400);
-  expect(global.fetch).not.toHaveBeenCalled();
-  expect(mockCandidates.create).not.toHaveBeenCalled();
+test('POST /me/cv-upload creates a new profile CV key', async () => {
+  const response = await request(app).post('/api/candidates/me/cv-upload').set(bearer)
+    .send({ filename: 'resume.pdf', contentType: 'application/pdf', size: 1024 });
+  expect(response.status).toBe(200);
+  expect(response.body.data.key).toMatch(/^cvs\/candidate-1\/profile\/[0-9a-f-]{36}\.pdf$/);
+  expect(new URL(response.body.data.uploadUrl).pathname).toBe(`/${response.body.data.key}`);
+  expect(new URL(response.body.data.uploadUrl).searchParams.get('X-Amz-SignedHeaders')).toBe('content-type;host;if-none-match');
+  expect(response.body.data.requiredHeaders).toEqual({ 'If-None-Match': '*' });
 });
 
 test('GET /cv-download signs a GET URL for the vacancy owner', async () => {
