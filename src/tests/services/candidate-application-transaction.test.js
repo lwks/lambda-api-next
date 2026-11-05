@@ -8,9 +8,10 @@ const { createApplication, PROFILE_FIELDS } = require('../../services/candidateA
 
 const arrays = new Set(['beneficiosAtuais', 'timeAtual', 'industriaInteresse', 'hardSkillsProfissionais',
   'softSkillsProfissionais', 'tipoContratacao', 'modeloTrabalho', 'setor', 'time',
-  'senioridadePreferencia', 'areaPreferencia', 'idiomas', 'hardSkills', 'softSkills']);
+  'senioridadePreferencia', 'areaPreferencia', 'hardSkills', 'softSkills']);
 const profile = Object.fromEntries(PROFILE_FIELDS.filter(field => !['indicacao', 'indicacoes'].includes(field))
-  .map(field => [field, arrays.has(field) ? ['1'] : 'Candidate']));
+  .map(field => [field, field === 'idiomas' ? [{ idioma: 'Inglês', fluencia: 'Fluente' }]
+    : arrays.has(field) ? ['1'] : 'Candidate']));
 const payload = { guid_vaga: 'job-1', mode: 'UPDATE_PROFILE', profile,
   application: { mensagemEmpresa: '', pretensaoSalarial: '10000', compartilhamentoAccepted: true,
     lgpdAccepted: true, cvAction: 'KEEP' } };
@@ -30,6 +31,15 @@ test('checks the vacancy and conditionally writes profile and application in one
     ConditionExpression: 'attribute_not_exists(candidato_sub)', Item: { candidato_sub: 'candidate-1', version: 1 } });
   expect(application.Put).toMatchObject({ TableName: 'Candidaturas',
     ConditionExpression: 'attribute_not_exists(guid_id)', Item: { candidate_sub: 'candidate-1' } });
+});
+
+test('allows a profile without the optional idiomas field', async () => {
+  const profileWithoutIdiomas = Object.fromEntries(Object.entries(profile).filter(([field]) => field !== 'idiomas'));
+  const created = await createApplication({ sub: 'candidate-1' }, {
+    ...payload,
+    profile: profileWithoutIdiomas,
+  });
+  expect(created).toMatchObject({ candidate_sub: 'candidate-1', profile_version: 1 });
 });
 
 test('maps a canceled transaction to a conflict without writing a second application', async () => {
