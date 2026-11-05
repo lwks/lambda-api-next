@@ -110,7 +110,8 @@ test('uploads a CV, creates an application, and enforces company ownership on do
   const { PROFILE_FIELDS } = require('../../services/candidateApplicationService');
   const profile = Object.fromEntries(PROFILE_FIELDS.filter(field => !['indicacao', 'indicacoes'].includes(field))
     .map(field => [field, ['beneficiosAtuais', 'timeAtual', 'industriaInteresse', 'hardSkillsProfissionais', 'softSkillsProfissionais',
-      'tipoContratacao', 'modeloTrabalho', 'setor', 'time', 'senioridadePreferencia', 'areaPreferencia', 'idiomas', 'hardSkills', 'softSkills'].includes(field) ? ['1'] : 'Candidate']));
+      'tipoContratacao', 'modeloTrabalho', 'setor', 'time', 'senioridadePreferencia', 'areaPreferencia', 'hardSkills', 'softSkills'].includes(field)
+      ? ['1'] : field === 'idiomas' ? [{ idioma: 'Inglês', fluencia: 'Fluente' }] : 'Candidate']));
   const created = await request(app).post('/api/candidates').set('Authorization', 'Bearer candidate')
     .send({ guid_id: id, guid_vaga: JOB_ID, ...profile, pretensaoSalarial: '10000', mensagemEmpresa: '',
       compartilhamentoAccepted: true, lgpdAccepted: true,
@@ -152,9 +153,9 @@ test('serves deterministic CEP fixtures without a network service', async () => 
 function completeProfile(name = 'Candidate Local') {
   const { PROFILE_FIELDS } = require('../../services/candidateApplicationService');
   const arrays = new Set(['beneficiosAtuais', 'timeAtual', 'industriaInteresse', 'hardSkillsProfissionais', 'softSkillsProfissionais',
-    'tipoContratacao', 'modeloTrabalho', 'setor', 'time', 'senioridadePreferencia', 'areaPreferencia', 'idiomas', 'hardSkills', 'softSkills']);
+    'tipoContratacao', 'modeloTrabalho', 'setor', 'time', 'senioridadePreferencia', 'areaPreferencia', 'hardSkills', 'softSkills']);
   return Object.fromEntries(PROFILE_FIELDS.filter(field => !['indicacao', 'indicacoes'].includes(field))
-    .map(field => [field, arrays.has(field) ? ['1'] : name]));
+    .map(field => [field, field === 'idiomas' ? [{ idioma: 'Inglês', fluencia: 'Fluente' }] : arrays.has(field) ? ['1'] : name]));
 }
 
 test('creates own profile and immutable application snapshots, then reuses without refilling', async () => {
