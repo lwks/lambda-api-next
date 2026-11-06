@@ -325,3 +325,19 @@ Esta seção complementa o guia histórico de contratos acima. O pipeline do fro
 - O modo local troca DynamoDB por JSON e S3 por arquivos; nunca remova guards para resolver problemas de navegação. Os perfis são `company`/`COMPANY` e `candidate`/`CANDIDATE`.
 - Preserve o bloqueio de modo local no Lambda handler e em produção. Dados locais ficam em `.harness/`, ignorado pelo Git.
 - Execute `npm test` antes de concluir mudanças. A integração dos dois projetos é validada por `npm --prefix ../front-nex-ats run test:e2e:local` (serviços Next parados antes).
+
+## Autenticação AWS para desenvolvimento local
+
+- O harness (`npm run dev:local`) usa JSON local e não consulta a AWS. Para acessar recursos AWS, suba a API normal com `npm.cmd start` ou `node src/local.js`.
+- Use AWS CLI v2. O fluxo `aws login` requer a versão 2.32.0 ou superior. No Windows, instale para o usuário atual pelo instalador oficial: <https://awscli.amazonaws.com/AWSCLIV2-User.msi>; confirme com `aws --version`.
+- Se `aws login` informar que o perfil `default` já contém credenciais, não apague nem sobrescreva essa configuração. Crie uma sessão em perfil nomeado: `aws login --profile codex-job-list`. Neste ambiente, a região usada foi `us-east-1`.
+- Antes de consultar ou alterar dados, confirme a identidade ativa com `aws sts get-caller-identity --profile codex-job-list` e valide a conta/ARN esperados para a tarefa.
+- Para a API Node.js usar esse perfil, defina `AWS_PROFILE` no mesmo processo que inicia a API:
+
+  ```powershell
+  $env:AWS_PROFILE = 'codex-job-list'
+  node src/local.js
+  ```
+
+- Se aparecer `Could not load credentials from any providers`, confirme que `AWS_PROFILE` foi herdado pelo processo e que ele consegue ler a configuração AWS do usuário. Não copie chaves ou tokens para `.env`, arquivos do repositório ou logs.
+- Nunca imprima nem registre valores de access keys, tokens de sessão ou credenciais; confirme o acesso apenas pela identidade retornada por STS.
