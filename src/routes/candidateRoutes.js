@@ -24,6 +24,12 @@ router.put('/me/profile', requireAccountType('CANDIDATE'), async (req, res, next
 router.post('/me/cv-upload', requireAccountType('CANDIDATE'), async (req, res, next) => {
   try { return success(res, await require('../services/cvStorageService').createProfileUpload(req.auth, req.body || {})); } catch (error) { return next(error); }
 });
+router.get('/me/cv-download', requireAccountType('CANDIDATE'), async (req, res, next) => {
+  try {
+    const profile = await applications.getProfile(req.auth.sub);
+    return success(res, await require('../services/cvStorageService').createProfileDownload(req.auth, profile?.cv));
+  } catch (error) { return next(error); }
+});
 router.get('/me/applications', requireAccountType('CANDIDATE'), async (req, res, next) => {
   try { return success(res, await applications.ownApplication(req.auth.sub, req.query.guid_vaga)); } catch (error) { return next(error); }
 });

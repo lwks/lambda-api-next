@@ -85,7 +85,8 @@ async function verifyUploadedCv(cv) {
   }
   const ext = cv.filename.split('.').pop().toLowerCase();
   const format = TYPES[ext];
-  if (!format || cv.contentType !== format.type || !/^cvs\/[A-Za-z0-9_-]+\/(?:profile\/)?[0-9a-f-]{36}\.(pdf|doc|docx)$/i.test(cv.key)) {
+  if (!format || cv.contentType !== format.type || !cv.key.toLowerCase().endsWith(`.${format.ext}`)
+    || !/^cvs\/[A-Za-z0-9_-]+\/(?:profile\/)?[0-9a-f-]{36}\.(pdf|doc|docx)$/i.test(cv.key)) {
     throw new ValidationError('Invalid CV reference');
   }
   const head = await presign('HEAD', cv.key);
@@ -94,7 +95,7 @@ async function verifyUploadedCv(cv) {
   if (!response.ok) throw new Error(`Could not verify CV upload (${response.status})`);
   const size = Number(response.headers.get('content-length'));
   const contentType = response.headers.get('content-type');
-  if (!Number.isFinite(size) || size < 1 || size > MAX_CV_BYTES || contentType !== format.type) {
+  if (!Number.isFinite(size) || size < 1 || size > MAX_CV_BYTES || size !== cv.size || contentType !== format.type) {
     throw new ValidationError('Uploaded CV must match the allowed type and be no larger than 5 MB');
   }
 }
@@ -110,6 +111,14 @@ async function createDownload(auth, id) {
   return { downloadUrl: urlOf(await presign('GET', candidate.cv.key, null, candidate.cv.filename)), filename: candidate.cv.filename };
 }
 
+async function createProfileDownload(auth, cv) {
+  if (auth?.accountType !== 'CANDIDATE' || !auth.sub) throw new ForbiddenError('Candidate account required');
+  if (!cv?.key) throw new NotFoundError('CV not found');
+  if (!cv.key.startsWith(`cvs/${auth.sub}/`) || !/^cvs\/[A-Za-z0-9_-]+\/(?:profile\/)?[0-9a-f-]{36}\.(pdf|doc|docx)$/i.test(cv.key))
+    throw new ForbiddenError('CV does not belong to this candidate');
+  return { downloadUrl: urlOf(await presign('GET', cv.key, null, cv.filename)), filename: cv.filename };
+}
+
 module.exports = require('../harness/config').isLocalHarness()
   ? require('../harness/cvStorage')
-  : { createUpload, createProfileUpload, createDownload, verifyUploadedCv, MAX_CV_BYTES, TYPES };
+  : { createUpload, createProfileUpload, createDownload, createProfileDownload, verifyUploadedCv, MAX_CV_BYTES, TYPES };

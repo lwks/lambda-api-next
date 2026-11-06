@@ -115,7 +115,7 @@ test('uploads a CV, creates an application, and enforces company ownership on do
   const created = await request(app).post('/api/candidates').set('Authorization', 'Bearer candidate')
     .send({ guid_id: id, guid_vaga: JOB_ID, ...profile, pretensaoSalarial: '10000', mensagemEmpresa: '',
       compartilhamentoAccepted: true, lgpdAccepted: true,
-      cv: { key: prepared.body.data.key, filename: 'test.pdf', contentType: 'application/pdf' } });
+      cv: { key: prepared.body.data.key, filename: 'test.pdf', contentType: 'application/pdf', size: cv.length } });
   expect(created.status).toBe(201);
   const applicationId = created.body.data.guid_id;
   const downloaded = await request(app).get(`/api/candidates/${applicationId}/cv-download`).set('Authorization', 'Bearer company');
@@ -212,6 +212,43 @@ test('limits company reads to owned vacancies, including historical records', as
   expect((await request(app).get('/api/candidates/by-job-guids?guid_vaga=' + JOB_ID).set('Authorization', 'Bearer other-company')).status).toBe(403);
   expect((await request(app).delete(`/api/candidates/${CANDIDATE_ID}`).set('Authorization', 'Bearer company')).status).toBe(403);
   expect((await request(app).get(`/api/candidates/${CANDIDATE_ID}`).set('Authorization', 'Bearer company')).status).toBe(200);
+});
+
+test('saves profile CV choices and only exposes its download to the candidate owner', async () => {
+  const candidate = { Authorization: 'Bearer candidate' };
+  expect((await request(app).put('/api/candidates/me/profile').set(candidate)
+    .send({ profile: completeProfile(), cvAction: 'KEEP' })).status).toBe(400);
+  const first = await request(app).put('/api/candidates/me/profile').set(candidate)
+    .send({ profile: completeProfile(), lgpdAccepted: true, cvAction: 'KEEP' });
+  expect(first.status).toBe(200);
+  expect(first.body.data.cv).toBeNull();
+  expect((await request(app).get('/api/candidates/me/cv-download').set(candidate)).status).toBe(404);
+  const bytes = Buffer.from('%PDF-1.4 profile fixture');
+  const prepared = await request(app).post('/api/candidates/me/cv-upload').set(candidate)
+    .send({ filename: 'own.pdf', contentType: 'application/pdf', size: bytes.length });
+  const url = new URL(prepared.body.data.uploadUrl);
+  expect((await request(app).put(url.pathname + url.search).set('Content-Type', 'application/pdf')
+    .set('If-None-Match', '*').send(bytes)).status).toBe(200);
+  const cv = { key: prepared.body.data.key, filename: 'own.pdf', contentType: 'application/pdf', size: bytes.length };
+  expect((await request(app).put('/api/candidates/me/profile').set(candidate)
+    .send({ version: 1, profile: completeProfile(), cvAction: 'REPLACE', cv: { ...cv, key: cv.key.replace('/candidate/', '/other/') } })).status).toBe(400);
+  expect((await request(app).put('/api/candidates/me/profile').set(candidate)
+    .send({ version: 1, profile: completeProfile(), cvAction: 'REPLACE', cv: { ...cv, size: bytes.length + 1 } })).status).toBe(400);
+  expect((await request(app).put('/api/candidates/me/profile').set(candidate)
+    .send({ version: 1, profile: completeProfile(), cvAction: 'REPLACE', cv })).status).toBe(200);
+  const download = await request(app).get('/api/candidates/me/cv-download').set(candidate);
+  expect(download.status).toBe(200);
+  expect(download.body.data.filename).toBe('own.pdf');
+  expect((await request(app).get('/api/candidates/me/cv-download').set('Authorization', 'Bearer company')).status).toBe(403);
+  expect((await request(app).put('/api/candidates/me/profile').set(candidate)
+    .send({ version: 1, profile: completeProfile(), cvAction: 'REMOVE' })).status).toBe(409);
+  const kept = await request(app).put('/api/candidates/me/profile').set(candidate)
+    .send({ version: 2, profile: completeProfile(), cvAction: 'KEEP' });
+  expect(kept.body.data.cv.key).toBe(cv.key);
+  const removed = await request(app).put('/api/candidates/me/profile').set(candidate)
+    .send({ version: 3, profile: completeProfile(), cvAction: 'REMOVE' });
+  expect(removed.body.data.cv).toBeNull();
+  expect((await request(app).get('/api/candidates/me/cv-download').set(candidate)).status).toBe(404);
 });
 
 test('replaces profile CV with a new key and omits it from one application without erasing profile CV', async () => {
