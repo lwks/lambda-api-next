@@ -76,10 +76,19 @@ async function saveProfile(sub, body) {
   if (existing && body.version !== existing.version) throw conflict('Profile version is outdated');
   if (!existing && body.version !== undefined) throw conflict('Profile does not exist');
   const profile = cleanProfile(body.profile);
+  const cvAction = body.cvAction || 'KEEP';
+  if (!['KEEP', 'REPLACE', 'REMOVE'].includes(cvAction)) throw new ValidationError('Invalid CV action');
+  let cv = existing?.cv || null;
+  if (cvAction === 'REPLACE') {
+    cv = body.cv;
+    if (typeof cv?.key !== 'string' || !/^cvs\/[A-Za-z0-9_-]+\/profile\/[0-9a-f-]{36}\.(pdf|doc|docx)$/i.test(cv.key)
+      || !cv.key.startsWith(`cvs/${sub}/profile/`)) throw new ValidationError('Invalid CV reference');
+    await cvStorage.verifyUploadedCv(cv);
+  } else if (cvAction === 'REMOVE') cv = null;
   const now = new Date().toISOString();
   const lgpdAcceptedAt = body.lgpdAccepted === true ? now : existing?.lgpdAcceptedAt;
   if (needsLgpd({ lgpdAccepted: Boolean(lgpdAcceptedAt), lgpdAcceptedAt }) ) throw new ValidationError('Accept the privacy terms');
-  const item = { ...profile, candidato_sub: sub, cv: existing?.cv || null, version: (existing?.version || 0) + 1,
+  const item = { ...profile, candidato_sub: sub, cv, version: (existing?.version || 0) + 1,
     lgpdAccepted: true, lgpdAcceptedAt, createdAt: existing?.createdAt || now, updatedAt: now };
   if (isLocalHarness()) {
     const store = require('../harness/store');

@@ -77,14 +77,14 @@ async function createProfileUpload(auth, input) {
 async function verifyUploadedCv(cv) {
   if (!cv || typeof cv.filename !== 'string') throw new ValidationError('Invalid CV reference');
   const format = TYPES[cv.filename.split('.').pop().toLowerCase()];
-  if (!format || format.type !== cv.contentType || !cv.key?.endsWith(`.${format.ext}`)) throw new ValidationError('Invalid CV reference');
+  if (!format || format.type !== cv.contentType || !cv.key?.toLowerCase().endsWith(`.${format.ext}`)) throw new ValidationError('Invalid CV reference');
   let file;
   try { file = readFile(cv.key); } catch (error) {
     if (error instanceof NotFoundError) throw new ValidationError('CV upload was not found');
     throw error;
   }
   const size = Buffer.from(file.bytes, 'base64').length;
-  if (!size || size > MAX_CV_BYTES || file.contentType !== cv.contentType) throw new ValidationError('Invalid uploaded CV');
+  if (!size || size > MAX_CV_BYTES || size !== cv.size || file.contentType !== cv.contentType) throw new ValidationError('Invalid uploaded CV');
 }
 
 async function createDownload(auth, id) {
@@ -95,6 +95,14 @@ async function createDownload(auth, id) {
   if (!auth.sub || !job.owner_sub || job.owner_sub !== auth.sub) throw new ForbiddenError('Company does not own this vacancy');
   readFile(candidate.cv.key);
   return { downloadUrl: urlFor('GET', candidate.cv.key, null, candidate.cv.filename), filename: candidate.cv.filename };
+}
+
+async function createProfileDownload(auth, cv) {
+  if (auth?.accountType !== 'CANDIDATE' || !auth.sub) throw new ForbiddenError('Candidate account required');
+  if (!cv?.key) throw new NotFoundError('CV not found');
+  if (!cv.key.startsWith(`cvs/${auth.sub}/`)) throw new ForbiddenError('CV does not belong to this candidate');
+  readFile(cv.key);
+  return { downloadUrl: urlFor('GET', cv.key, null, cv.filename), filename: cv.filename };
 }
 
 function fileRouter() {
@@ -127,4 +135,4 @@ function fileRouter() {
   return router;
 }
 
-module.exports = { createUpload, createProfileUpload, verifyUploadedCv, createDownload, fileRouter, initializeCv, MAX_CV_BYTES, TYPES };
+module.exports = { createUpload, createProfileUpload, verifyUploadedCv, createDownload, createProfileDownload, fileRouter, initializeCv, MAX_CV_BYTES, TYPES };
