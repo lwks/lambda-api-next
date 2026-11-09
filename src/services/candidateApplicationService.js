@@ -18,7 +18,7 @@ const PROFILE_FIELDS = [
   'tipoContratacao', 'modeloTrabalho', 'setor', 'time', 'senioridadePreferencia',
   'areaPreferencia', 'idiomas', 'hardSkills', 'softSkills', 'viagemTrabalho', 'sobreVoce',
 ];
-const REQUIRED_FIELDS = PROFILE_FIELDS.filter(field => !['indicacao', 'indicacoes', 'idiomas'].includes(field));
+const REQUIRED_FIELDS = PROFILE_FIELDS.filter(field => !['indicacao', 'indicacoes', 'idiomas', 'hardSkills', 'softSkills'].includes(field));
 const ARRAY_FIELDS = new Set(['beneficiosAtuais', 'timeAtual', 'industriaInteresse', 'hardSkillsProfissionais',
   'softSkillsProfissionais', 'tipoContratacao', 'modeloTrabalho', 'setor', 'time',
   'senioridadePreferencia', 'areaPreferencia', 'idiomas', 'hardSkills', 'softSkills']);
@@ -45,6 +45,10 @@ function cleanProfile(input) {
     if (ARRAY_FIELDS.has(field)) {
       if (!Array.isArray(value) || value.length > 100) throw new ValidationError(`Invalid profile field: ${field}`);
     } else if (typeof value !== 'string' || value.length > 5000) throw new ValidationError(`Invalid profile field: ${field}`);
+  }
+  for (const field of ['hardSkills', 'softSkills']) {
+    if (output[field] !== undefined && (!Array.isArray(output[field]) || output[field].length > 100))
+      throw new ValidationError(`Invalid profile field: ${field}`);
   }
   if (output.idiomas !== undefined) {
     if (!Array.isArray(output.idiomas) || output.idiomas.length > 100
