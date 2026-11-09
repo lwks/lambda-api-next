@@ -263,8 +263,11 @@ test('replaces profile CV with a new key and omits it from one application witho
   expect((await request(app).put(url.pathname + url.search).set('Content-Type', 'application/pdf').set('If-None-Match', '*').send(bytes)).status).toBe(200);
   expect((await request(app).put(url.pathname + url.search).set('Content-Type', 'application/pdf').set('If-None-Match', '*').send(bytes)).status).toBe(412);
   const cv = { key: prepared.body.data.key, filename: 'profile.pdf', contentType: 'application/pdf', size: bytes.length };
+  const profileWithoutPreferenceSkills = completeProfile();
+  delete profileWithoutPreferenceSkills.hardSkills;
+  delete profileWithoutPreferenceSkills.softSkills;
   const first = await request(app).post('/api/candidates/applications').set(candidate).send({ guid_vaga: JOB_ID,
-    mode: 'UPDATE_PROFILE', profile: completeProfile(), application: { mensagemEmpresa: '', pretensaoSalarial: '10000',
+    mode: 'UPDATE_PROFILE', profile: profileWithoutPreferenceSkills, application: { mensagemEmpresa: '', pretensaoSalarial: '10000',
       compartilhamentoAccepted: true, lgpdAccepted: true, cvAction: 'REPLACE', cv } });
   expect(first.status).toBe(201);
   expect(first.body.data.cv.key).toBe(cv.key);
@@ -291,4 +294,12 @@ test('replaces profile CV with a new key and omits it from one application witho
   expect((await request(app).get('/api/candidates/me/profile').set(candidate)).body.data.cv.key).toBe(replacement.body.data.key);
   expect((await request(app).get(`/api/candidates/${first.body.data.guid_id}`).set(company)).body.data.cv.key).toBe(cv.key);
   expect((await request(app).get(`/api/candidates/${first.body.data.guid_id}/cv-download`).set(company)).status).toBe(200);
+  expect((await request(app).get(`/api/candidates/${second.body.data.guid_id}/cv-download`).set(company)).status).toBe(404);
+  await request(app).post('/api/jobs').set(company).send({ guid_id: 'cv-fourth-job', status: 'Aberto' });
+  const fourth = await request(app).post('/api/candidates/applications').set(candidate).send({ guid_vaga: 'cv-fourth-job',
+    mode: 'USE_SAVED_PROFILE', profileVersion: 2, application: { mensagemEmpresa: '', pretensaoSalarial: '10000',
+      compartilhamentoAccepted: true, cvAction: 'KEEP' } });
+  expect(fourth.status).toBe(201);
+  expect(fourth.body.data.cv.key).toBe(replacement.body.data.key);
+  expect((await request(app).get(`/api/candidates/${fourth.body.data.guid_id}/cv-download`).set(company)).status).toBe(200);
 });
