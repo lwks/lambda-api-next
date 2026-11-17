@@ -4,6 +4,7 @@ const { error } = require('./utils/response');
 const { NotFoundError, ValidationError } = require('./utils/errors');
 const swaggerUi = require('swagger-ui-express');
 const { swaggerSpec } = require('./swagger');
+const { requestLogger } = require('./middleware/requestLogger');
 
 const app = express();
 
@@ -37,7 +38,7 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.use('/api', routes);
+app.use('/api', requestLogger, routes);
 
 app.use((req, res, next) => {
   next(new NotFoundError('Resource not found'));

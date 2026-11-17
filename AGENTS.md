@@ -320,11 +320,12 @@ Se você (Codex) estiver trabalhando no backend para atender este front:
 
 Esta seção complementa o guia histórico de contratos acima. O pipeline do front atual já integra os endpoints de candidaturas, status, anotações e CV.
 
+- Antes de executar o harness local, inclusive `dev:local`, `test:e2e:local`, `local:doctor`, `local:reset` ou o launcher diretamente, peça autorização humana explícita e aguarde a resposta. Um pedido genérico de implementação ou validação não autoriza seu início. Sem autorização, registre a validação local como pendente.
 - Leia `docs/LOCAL_HARNESS.md`. O launcher completo está no repositório irmão `../front-nex-ats`: `npm --prefix ../front-nex-ats run dev:local`.
 - `npm run dev:local` aqui sobe apenas a API com armazenamento local e requer o simulador de autenticação rodando no front.
 - O modo local troca DynamoDB por JSON e S3 por arquivos; nunca remova guards para resolver problemas de navegação. Os perfis são `company`/`COMPANY` e `candidate`/`CANDIDATE`.
 - Preserve o bloqueio de modo local no Lambda handler e em produção. Dados locais ficam em `.harness/`, ignorado pelo Git.
-- Execute `npm test` antes de concluir mudanças. A integração dos dois projetos é validada por `npm --prefix ../front-nex-ats run test:e2e:local` (serviços Next parados antes).
+- Execute `npm test` antes de concluir mudanças. Após autorização humana explícita, valide a integração dos dois projetos com `npm --prefix ../front-nex-ats run test:e2e:local` (serviços Next parados antes).
 
 ## Autenticação AWS para desenvolvimento local
 
