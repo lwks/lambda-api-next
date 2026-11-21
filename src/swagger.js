@@ -20,9 +20,40 @@ const swaggerDefinition = {
     { name: 'Companies' },
     { name: 'Users' },
     { name: 'Jobs' },
+    { name: 'Emails' },
   ],
   components: {
+    securitySchemes: {
+      EmailServiceToken: {
+        type: 'http', scheme: 'bearer',
+        description: 'Chave EMAIL_SERVICE_TOKEN exclusiva do servidor; nao aceita JWT de usuario.',
+      },
+    },
     schemas: {
+      EmailRequest: {
+        type: 'object', additionalProperties: false,
+        required: ['to', 'subject'],
+        anyOf: [{ required: ['text'] }, { required: ['html'] }],
+        description: 'Um destinatario. text ou html deve ter conteudo nao vazio; limite combinado de 51200 bytes UTF-8.',
+        properties: {
+          to: { type: 'string', format: 'email', maxLength: 254, example: 'destinatario@example.com' },
+          subject: { type: 'string', minLength: 1, maxLength: 200, description: 'Nao aceita quebras de linha.' },
+          text: { type: 'string' },
+          html: { type: 'string' },
+        },
+      },
+      EmailAccepted: {
+        type: 'object', required: ['data'],
+        properties: {
+          data: {
+            type: 'object', required: ['status', 'messageId'],
+            properties: {
+              status: { type: 'string', enum: ['accepted'] },
+              messageId: { type: 'string' },
+            },
+          },
+        },
+      },
       Candidate: {
         type: 'object',
         properties: {
@@ -109,6 +140,29 @@ const swaggerDefinition = {
     },
   },
   paths: {
+    '/api/emails': {
+      post: {
+        tags: ['Emails'], summary: 'Envia um email transacional pelo SMTP',
+        description: 'Uso interno entre servidores. Remetente configurado no servidor. Sem anexos, CC ou CCO. Aceite SMTP nao confirma entrega. Sem repeticao automatica. Bloqueado no harness local.',
+        security: [{ EmailServiceToken: [] }],
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/EmailRequest' } } },
+        },
+        responses: {
+          202: {
+            description: 'Mensagem aceita pelo SMTP; entrega nao confirmada',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/EmailAccepted' } } },
+          },
+          400: { $ref: '#/components/responses/ValidationError' },
+          401: { description: 'Chave de servico ausente ou invalida' },
+          413: { description: 'Requisicao excede o limite HTTP do Express (100 KB)' },
+          502: { description: 'Falha de autenticacao, conexao ou rejeicao SMTP' },
+          503: { description: 'Configuracao ausente/invalida ou envio bloqueado no harness' },
+          504: { description: 'Timeout SMTP; aceite desconhecido, nao repetir automaticamente' },
+        },
+      },
+    },
     '/health': {
       get: {
         tags: ['Health'],
