@@ -1,4 +1,91 @@
-# AGENTS.md — Guia real do repositório `lambda-api-next`
+# README — Guia real do repositório `lambda-api-next`
+
+## Envio de e-mail transacional
+
+`POST /api/emails` envia uma mensagem para **um destinatário**, usando SMTP Brevo.
+É um endpoint interno entre servidores: exige `Authorization: Bearer <EMAIL_SERVICE_TOKEN>`.
+Essa chave é independente dos JWTs de usuários, inclusive COMPANY, e deve permanecer
+somente no servidor. O front deve chamar seu próprio backend/BFF, que guarda essa chave.
+
+### Configuração
+
+Use `.env.example` como referência, sem colocar credenciais no Git. Exporte as variáveis
+no processo que inicia a API; `npm start` não carrega `.env` automaticamente.
+
+| Variável | Configuração |
+| --- | --- |
+| `SMTP_HOST` | Padrão: `smtp-relay.brevo.com` |
+| `SMTP_PORT` | Padrão: `587`, com STARTTLS obrigatório; `465` usa TLS desde a conexão |
+| `SMTP_USER` | Login SMTP fornecido pela Brevo; obrigatório |
+| `SMTP_PASS` | Chave **SMTP** da Brevo, diferente da chave da API HTTP; obrigatória |
+| `SMTP_FROM_EMAIL` | Remetente obrigatório; usar `contato@cluster.com.br`, autorizado na Brevo |
+| `SMTP_FROM_NAME` | Padrão: `ClusterJobs` |
+| `EMAIL_SERVICE_TOKEN` | Chave exclusiva para autorizar este endpoint; obrigatória |
+
+Gere `EMAIL_SERVICE_TOKEN` com pelo menos 32 bytes aleatórios, guarde-a de forma segura
+e compartilhe-a apenas com os servidores chamadores. O arquivo local `inf-api-smtp.txt`
+é ignorado pelo Git e não é lido pela aplicação.
+
+A conexão valida o certificado TLS e usa limites de 5 segundos para conexão/saudação
+e 10 segundos de inatividade do socket. Na Lambda, configure as variáveis no ambiente
+e garanta saída de rede para o SMTP. O timeout da função e do gateway deve acomodar
+esses tempos de conexão e transmissão. O workflow atual publica código, sem configurar
+essas variáveis. A falta de configuração afeta o envio, sem impedir o restante da API de iniciar.
+
+### Requisição e resposta
+
+Exemplo para um terminal Bash no servidor, com `EMAIL_SERVICE_TOKEN` já configurado:
+
+```bash
+curl -X POST http://localhost:3000/api/emails \
+  -H "Authorization: Bearer ${EMAIL_SERVICE_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"to":"destinatario@example.com","subject":"Mensagem da ClusterJobs","text":"Olá!","html":"<p>Olá!</p>"}'
+```
+
+- `to`: um endereço simples válido, até 254 caracteres; sem nome de exibição ou lista.
+- `subject`: texto não vazio de até 200 caracteres, sem quebras de linha; espaços externos são removidos.
+- `text` e `html`: strings; pelo menos uma deve ter conteúdo não vazio. Podem ser enviadas juntas.
+- Conteúdo combinado limitado a **51200 bytes UTF-8**. O limite HTTP global do Express é 100 KB.
+- Campos adicionais são rejeitados, incluindo `from`, anexos, cabeçalhos, CC e CCO.
+
+Após o servidor SMTP aceitar a mensagem, retorna `202`:
+
+```json
+{
+  "data": {
+    "status": "accepted",
+    "messageId": "<identificador-da-mensagem>"
+  }
+}
+```
+
+`accepted` confirma apenas o aceite SMTP, **não a entrega na caixa de entrada**.
+Não há fila própria, histórico, webhook de entrega ou repetição automática. Uma nova
+chamada pode enviar outra mensagem. Em timeout ou falha de conexão após a transmissão,
+o aceite pode ser desconhecido; confira os registros transacionais da Brevo antes de repetir.
+
+Erros seguem `{ "message": "..." }`, sem credenciais, conteúdo ou resposta bruta do SMTP:
+
+| Status | Significado |
+| --- | --- |
+| `400` | Payload inválido ou conteúdo acima de 50 KB |
+| `401` | Chave de serviço ausente ou inválida |
+| `413` | Requisição acima do limite HTTP global |
+| `502` | Rejeição, erro de autenticação ou falha de conexão SMTP |
+| `503` | Configuração ausente/inválida ou envio bloqueado no harness local |
+| `504` | Timeout SMTP; aceite desconhecido |
+
+Logs registram identificador da requisição, duração e resultado; no sucesso incluem
+`messageId`. Não registram destinatário, assunto, corpo ou credenciais.
+
+### Testes
+
+Execute `npm test`. Os testes do endpoint usam Jest/Supertest com transporte SMTP
+simulado e não disparam e-mails reais. Cobrem autenticação, validação, limites UTF-8,
+aceite, rejeição, timeout, configuração, proteção dos dados e o contrato em `/docs.json`.
+O envio real é bloqueado em `HARNESS_MODE=local`; iniciar o harness ou E2E dos dois
+projetos exige autorização humana específica, conforme `AGENTS.md`.
 
 API REST construída com Express e empacotada com `serverless-http` para execução em AWS Lambda. A aplicação usa DynamoDB (AWS SDK v3) como camada de persistência e organiza a lógica em camadas de controllers, services, utilitários e middlewares reutilizáveis.
 
