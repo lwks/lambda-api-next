@@ -8,9 +8,9 @@ function unavailable(message = 'Email service is not configured') {
 
 function getEmailConfig(env = process.env) {
   const host = env.SMTP_HOST || 'smtp-relay.brevo.com';
-  const portValue = env.SMTP_PORT || '587';
+  const portValue = env.SMTP_PORT || '465';
   const port = Number(portValue);
-  const fromName = env.SMTP_FROM_NAME || 'ClusterJobs';
+  const fromName = env.SMTP_FROM_NAME || 'Cluster';
   if (!env.SMTP_USER || !env.SMTP_PASS || !isEmailAddress(env.SMTP_FROM_EMAIL)
       || !/^[a-zA-Z0-9.-]+$/.test(host)
       || !/^\d+$/.test(portValue) || port < 1 || port > 65535
