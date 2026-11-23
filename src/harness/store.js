@@ -80,8 +80,9 @@ function createLocalEntityService(entityType) {
       save(db);
       return true;
     },
-    async list({ limit = 20, lastKey } = {}) {
-      const rows = read()[entityType];
+    async list({ limit = 20, lastKey, jobStatus } = {}) {
+      const rows = read()[entityType].filter(row => !jobStatus || entityType !== 'job'
+        || (jobStatus === 'closed' ? row.status === 'Encerrada' : row.status !== 'Encerrada'));
       const start = lastKey ? rows.findIndex(row => row[key] === lastKey[key]) + 1 : 0;
       const items = rows.slice(start, start + limit);
       return { items, lastEvaluatedKey: start + limit < rows.length ? { [key]: items.at(-1)[key] } : undefined };

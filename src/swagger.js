@@ -20,9 +20,44 @@ const swaggerDefinition = {
     { name: 'Companies' },
     { name: 'Users' },
     { name: 'Jobs' },
+    { name: 'Emails' },
   ],
   components: {
+    securitySchemes: {
+      bearerAuth: {
+        type: 'http', scheme: 'bearer', bearerFormat: 'JWT',
+        description: 'JWT do usuário autenticado; histórico exige perfil CANDIDATE.',
+      },
+      EmailServiceToken: {
+        type: 'http', scheme: 'bearer',
+        description: 'Chave EMAIL_SERVICE_TOKEN exclusiva do servidor; nao aceita JWT de usuario.',
+      },
+    },
     schemas: {
+      EmailRequest: {
+        type: 'object', additionalProperties: false,
+        required: ['to', 'subject'],
+        anyOf: [{ required: ['text'] }, { required: ['html'] }],
+        description: 'Um destinatario. text ou html deve ter conteudo nao vazio; limite combinado de 51200 bytes UTF-8.',
+        properties: {
+          to: { type: 'string', format: 'email', maxLength: 254, example: 'destinatario@example.com' },
+          subject: { type: 'string', minLength: 1, maxLength: 200, description: 'Nao aceita quebras de linha.' },
+          text: { type: 'string' },
+          html: { type: 'string' },
+        },
+      },
+      EmailAccepted: {
+        type: 'object', required: ['data'],
+        properties: {
+          data: {
+            type: 'object', required: ['status', 'messageId'],
+            properties: {
+              status: { type: 'string', enum: ['accepted'] },
+              messageId: { type: 'string' },
+            },
+          },
+        },
+      },
       Candidate: {
         type: 'object',
         properties: {
@@ -109,6 +144,29 @@ const swaggerDefinition = {
     },
   },
   paths: {
+    '/api/emails': {
+      post: {
+        tags: ['Emails'], summary: 'Envia um email transacional pelo SMTP',
+        description: 'Uso interno entre servidores. Remetente configurado no servidor. Sem anexos, CC ou CCO. Aceite SMTP nao confirma entrega. Sem repeticao automatica. Bloqueado no harness local.',
+        security: [{ EmailServiceToken: [] }],
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/EmailRequest' } } },
+        },
+        responses: {
+          202: {
+            description: 'Mensagem aceita pelo SMTP; entrega nao confirmada',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/EmailAccepted' } } },
+          },
+          400: { $ref: '#/components/responses/ValidationError' },
+          401: { description: 'Chave de servico ausente ou invalida' },
+          413: { description: 'Requisicao excede o limite HTTP do Express (100 KB)' },
+          502: { description: 'Falha de autenticacao, conexao ou rejeicao SMTP' },
+          503: { description: 'Configuracao ausente/invalida ou envio bloqueado no harness' },
+          504: { description: 'Timeout SMTP; aceite desconhecido, nao repetir automaticamente' },
+        },
+      },
+    },
     '/health': {
       get: {
         tags: ['Health'],
@@ -591,11 +649,33 @@ const swaggerDefinition = {
         },
       },
     },
+    '/api/candidates/me/applications': {
+      get: {
+        tags: ['Candidates'],
+        summary: 'Consulta o histórico do candidato autenticado ou uma candidatura por vaga',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { in: 'query', name: 'guid_vaga', schema: { type: 'string' }, description: 'Quando informado, retorna a candidatura individual (ou null)' },
+          { in: 'query', name: 'status', schema: { type: 'string', enum: ['open', 'closed', 'all'], default: 'open' }, description: 'Status atual da vaga; usado somente na consulta do histórico' },
+        ],
+        responses: {
+          200: { description: 'Envelope data com items do histórico, ou uma candidatura individual quando guid_vaga é informado' },
+          400: { description: 'Filtro inválido' },
+          401: { description: 'Autenticação obrigatória' },
+          403: { description: 'Perfil CANDIDATE obrigatório' },
+        },
+      },
+    },
     '/api/jobs': {
       get: {
         tags: ['Jobs'],
-        summary: 'Lista vagas com paginação opcional',
+        summary: 'Lista vagas abertas por padrão ou consulta o arquivo de encerradas',
         parameters: [
+          {
+            in: 'query', name: 'status',
+            schema: { type: 'string', enum: ['open', 'closed'], default: 'open' },
+            description: 'Filtra a listagem e a paginação pelo status da vaga',
+          },
           {
             in: 'query',
             name: 'limit',

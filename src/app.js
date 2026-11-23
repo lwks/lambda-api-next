@@ -4,6 +4,7 @@ const { error } = require('./utils/response');
 const { NotFoundError, ValidationError } = require('./utils/errors');
 const swaggerUi = require('swagger-ui-express');
 const { swaggerSpec } = require('./swagger');
+const { requestLogger } = require('./middleware/requestLogger');
 
 const app = express();
 
@@ -37,7 +38,7 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.use('/api', routes);
+app.use('/api', requestLogger, routes);
 
 app.use((req, res, next) => {
   next(new NotFoundError('Resource not found'));
@@ -45,6 +46,10 @@ app.use((req, res, next) => {
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
+  // JSON parser errors can include fragments of the submitted email body.
+  if (/^\/api\/emails\/?$/i.test(req.path) && err.type === 'entity.parse.failed') {
+    return error(res, 'Invalid JSON body', 400);
+  }
   if (err instanceof ValidationError) {
     return error(res, err.message, err.statusCode, err.details);
   }

@@ -77,8 +77,10 @@ test('closes a company vacancy once, keeps its reason private, and blocks new or
   const mine = await request(app).get('/api/jobs/mine').set(headers);
   expect(mine.body.data.items.find(job => job.guid_id === jobId).motivo_encerramento).toBe('Contratação concluída');
   const publicJobs = await request(app).get('/api/jobs');
-  expect(publicJobs.body.data.items.find(job => job.guid_id === jobId)).toMatchObject({ status: 'Encerrada' });
-  expect(publicJobs.body.data.items.find(job => job.guid_id === jobId)).not.toHaveProperty('motivo_encerramento');
+  expect(publicJobs.body.data.items.find(job => job.guid_id === jobId)).toBeUndefined();
+  const archivedJobs = await request(app).get('/api/jobs?status=closed');
+  expect(archivedJobs.body.data.items.find(job => job.guid_id === jobId)).toMatchObject({ status: 'Encerrada' });
+  expect(archivedJobs.body.data.items.find(job => job.guid_id === jobId)).not.toHaveProperty('motivo_encerramento');
   expect((await request(app).get(`/api/jobs/${jobId}`)).body.data).not.toHaveProperty('motivo_encerramento');
 
   const newApplication = await request(app).post('/api/candidates/applications').set('Authorization', 'Bearer candidate')

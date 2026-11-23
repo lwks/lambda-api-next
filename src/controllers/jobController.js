@@ -31,8 +31,10 @@ async function listJobs(req, res, next) {
     const limitParam = Number.parseInt(req.query.limit, 10);
     const limit = Number.isNaN(limitParam) ? 20 : Math.min(Math.max(limitParam, 1), 100);
     const lastKey = decodeLastKey(req.query.lastKey);
+    const status = req.query.status || 'open';
+    if (!['open', 'closed'].includes(status)) throw new ValidationError('status must be open or closed');
     logger.info('Listing jobs with pagination parameters', { limit, hasLastKey: Boolean(lastKey) });
-    const result = await jobService.list({ limit, lastKey });
+    const result = await jobService.list({ limit, lastKey, jobStatus: status });
     if (!result.items || result.items.length === 0) {
       logger.warn('Job list returned no items', { limit, hasLastKey: Boolean(lastKey) });
     }
