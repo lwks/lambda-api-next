@@ -1,5 +1,14 @@
 # README — Guia real do repositório `lambda-api-next`
 
+<<<<<<< HEAD
+=======
+## Vagas públicas e histórico do candidato
+
+- `GET /api/jobs` mostra somente abertas por padrão. `status=closed` consulta encerradas; `status=open` explicita o padrão. Outros valores retornam 400. `limit` e `lastKey` paginam dentro do status selecionado, inclusive quando uma página de scan DynamoDB não tem correspondências. `/api/jobs/mine` mantém o histórico da empresa.
+- `GET /api/candidates/me/applications?status=open|closed|all` lista exclusivamente as candidaturas da identidade CANDIDATE autenticada (padrão `open`), com título/status atual da vaga e etapa da candidatura. Não aceita uma identidade de candidato enviada pelo cliente. `guid_vaga` preserva a consulta individual existente. Vagas removidas aparecem apenas em `all`, como indisponíveis.
+- Vagas encerradas permanecem acessíveis pelo detalhe. Novas candidaturas são rejeitadas com 409; uma condição na transação DynamoDB impede a gravação caso a vaga seja encerrada depois da leitura inicial.
+
+>>>>>>> 5127ae4a8a7c8a204a8699ec90e529f60c1620b5
 ## Envio de e-mail transacional
 
 `POST /api/emails` envia uma mensagem para **um destinatário**, usando SMTP Brevo.
@@ -15,11 +24,19 @@ no processo que inicia a API; `npm start` não carrega `.env` automaticamente.
 | Variável | Configuração |
 | --- | --- |
 | `SMTP_HOST` | Padrão: `smtp-relay.brevo.com` |
+<<<<<<< HEAD
 | `SMTP_PORT` | Padrão: `587`, com STARTTLS obrigatório; `465` usa TLS desde a conexão |
 | `SMTP_USER` | Login SMTP fornecido pela Brevo; obrigatório |
 | `SMTP_PASS` | Chave **SMTP** da Brevo, diferente da chave da API HTTP; obrigatória |
 | `SMTP_FROM_EMAIL` | Remetente obrigatório; usar `contato@cluster.com.br`, autorizado na Brevo |
 | `SMTP_FROM_NAME` | Padrão: `ClusterJobs` |
+=======
+| `SMTP_PORT` | Padrão: `465`, com TLS desde a conexão; `587` continua disponível com STARTTLS obrigatório |
+| `SMTP_USER` | Login SMTP fornecido pela Brevo; obrigatório |
+| `SMTP_PASS` | Chave **SMTP** da Brevo, diferente da chave da API HTTP; obrigatória |
+| `SMTP_FROM_EMAIL` | Remetente obrigatório; usar `no-reply@clusterjobs.com.br`, validado nos testes de entrega |
+| `SMTP_FROM_NAME` | Padrão: `Cluster` |
+>>>>>>> 5127ae4a8a7c8a204a8699ec90e529f60c1620b5
 | `EMAIL_SERVICE_TOKEN` | Chave exclusiva para autorizar este endpoint; obrigatória |
 
 Gere `EMAIL_SERVICE_TOKEN` com pelo menos 32 bytes aleatórios, guarde-a de forma segura
@@ -32,6 +49,14 @@ e garanta saída de rede para o SMTP. O timeout da função e do gateway deve ac
 esses tempos de conexão e transmissão. O workflow atual publica código, sem configurar
 essas variáveis. A falta de configuração afeta o envio, sem impedir o restante da API de iniciar.
 
+<<<<<<< HEAD
+=======
+Para alinhar um ambiente existente, configure `SMTP_FROM_EMAIL=no-reply@clusterjobs.com.br`,
+`SMTP_PORT=465` e `SMTP_FROM_NAME=Cluster`. Valores definidos no ambiente prevalecem
+sobre os padrões do código: publicar a atualização não substitui variáveis já configuradas.
+O remetente continua obrigatório, sem endereço de fallback no código.
+
+>>>>>>> 5127ae4a8a7c8a204a8699ec90e529f60c1620b5
 ### Requisição e resposta
 
 Exemplo para um terminal Bash no servidor, com `EMAIL_SERVICE_TOKEN` já configurado:
@@ -84,8 +109,20 @@ Logs registram identificador da requisição, duração e resultado; no sucesso 
 Execute `npm test`. Os testes do endpoint usam Jest/Supertest com transporte SMTP
 simulado e não disparam e-mails reais. Cobrem autenticação, validação, limites UTF-8,
 aceite, rejeição, timeout, configuração, proteção dos dados e o contrato em `/docs.json`.
+<<<<<<< HEAD
 O envio real é bloqueado em `HARNESS_MODE=local`; iniciar o harness ou E2E dos dois
 projetos exige autorização humana específica, conforme `AGENTS.md`.
+=======
+O envio real é bloqueado em `HARNESS_MODE=local`.
+
+Em 22/11/2026, foi confirmada a entrega dos testes manuais para Hotmail e Gmail com
+`no-reply@clusterjobs.com.br`: texto simples via Python, HTML via SMTP direto e
+texto/HTML via Nodemailer na porta 587, além do teste na porta 465 com TLS desde
+a conexão e nome `Cluster`, conforme a configuração do Supabase.
+As duas portas funcionaram; não foi necessário alterar o formato das mensagens.
+Esses testes foram disparos SMTP independentes, não uma validação do endpoint
+implantado. A resposta `202 accepted` permanece indicando apenas aceite SMTP.
+>>>>>>> 5127ae4a8a7c8a204a8699ec90e529f60c1620b5
 
 API REST construída com Express e empacotada com `serverless-http` para execução em AWS Lambda. A aplicação usa DynamoDB (AWS SDK v3) como camada de persistência e organiza a lógica em camadas de controllers, services, utilitários e middlewares reutilizáveis.
 

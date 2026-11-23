@@ -12,9 +12,9 @@ function getEmailConfig(env = process.env) {
   const port = Number(portValue);
   const fromName = env.SMTP_FROM_NAME || 'ClusterJobs';
   if (!env.SMTP_USER || !env.SMTP_PASS || !isEmailAddress(env.SMTP_FROM_EMAIL)
-      || !/^[a-zA-Z0-9.-]+$/.test(host)
-      || !/^\d+$/.test(portValue) || port < 1 || port > 65535
-      || /[\r\n\x00]/.test(fromName)) {
+    || !/^[a-zA-Z0-9.-]+$/.test(host)
+    || !/^\d+$/.test(portValue) || port < 1 || port > 65535
+    || /[\r\n\x00]/.test(fromName)) {
     throw unavailable();
   }
   return {
