@@ -26,24 +26,14 @@ function post(body = payload, authorization = `Bearer ${token}`) {
 beforeEach(() => {
   jest.clearAllMocks();
   process.env = {
-<<<<<<< HEAD
-    ...originalEnv, SMTP_HOST: 'smtp-relay.brevo.com', SMTP_PORT: '587',
-    SMTP_USER: 'smtp-user', SMTP_PASS: 'secret-smtp-password',
-    SMTP_FROM_EMAIL: 'contato@cluster.com.br', SMTP_FROM_NAME: 'ClusterJobs',
-=======
     ...originalEnv, SMTP_HOST: 'smtp-relay.brevo.com', SMTP_PORT: '465',
     SMTP_USER: 'smtp-user', SMTP_PASS: 'secret-smtp-password',
     SMTP_FROM_EMAIL: 'no-reply@clusterjobs.com.br', SMTP_FROM_NAME: 'Cluster',
->>>>>>> 5127ae4a8a7c8a204a8699ec90e529f60c1620b5
     EMAIL_SERVICE_TOKEN: token,
   };
   isLocalHarness.mockReturnValue(false);
   sendMail = jest.fn().mockResolvedValue({
-<<<<<<< HEAD
-    accepted: [payload.to], rejected: [], messageId: '<test-message@cluster.com.br>',
-=======
     accepted: [payload.to], rejected: [], messageId: '<test-message@clusterjobs.com.br>',
->>>>>>> 5127ae4a8a7c8a204a8699ec90e529f60c1620b5
   });
   close = jest.fn();
   nodemailer.createTransport.mockReturnValue({ sendMail, close });
@@ -63,14 +53,6 @@ test.each([
   const body = { to: payload.to, subject: payload.subject, ...content };
   const response = await post(body);
   expect(response.status).toBe(202);
-<<<<<<< HEAD
-  expect(response.body).toEqual({ data: { status: 'accepted', messageId: '<test-message@cluster.com.br>' } });
-  expect(sendMail).toHaveBeenCalledTimes(1);
-  expect(sendMail).toHaveBeenCalledWith({
-    ...body, from: { name: 'ClusterJobs', address: 'contato@cluster.com.br' },
-  });
-  expect(verifyAccessToken).not.toHaveBeenCalled();
-=======
   expect(response.body).toEqual({ data: { status: 'accepted', messageId: '<test-message@clusterjobs.com.br>' } });
   expect(sendMail).toHaveBeenCalledTimes(1);
   expect(sendMail).toHaveBeenCalledWith({
@@ -80,18 +62,13 @@ test.each([
   expect(logger.info).toHaveBeenCalledWith('Email accepted by SMTP server', expect.objectContaining({
     requestId: expect.any(String), messageId: '<test-message@clusterjobs.com.br>',
   }));
->>>>>>> 5127ae4a8a7c8a204a8699ec90e529f60c1620b5
   expect(close).toHaveBeenCalledTimes(1);
 });
 
 test('uses secure transport options and fixed server-side credentials', async () => {
   await post();
   expect(nodemailer.createTransport).toHaveBeenCalledWith(expect.objectContaining({
-<<<<<<< HEAD
-    host: 'smtp-relay.brevo.com', port: 587, secure: false, requireTLS: true,
-=======
     host: 'smtp-relay.brevo.com', port: 465, secure: true, requireTLS: false,
->>>>>>> 5127ae4a8a7c8a204a8699ec90e529f60c1620b5
     auth: { user: 'smtp-user', pass: 'secret-smtp-password' },
     tls: { rejectUnauthorized: true, minVersion: 'TLSv1.2' },
     connectionTimeout: 5000, greetingTimeout: 5000, socketTimeout: 10000,
@@ -99,13 +76,6 @@ test('uses secure transport options and fixed server-side credentials', async ()
   }));
 });
 
-<<<<<<< HEAD
-test('supports implicit TLS on port 465', async () => {
-  process.env.SMTP_PORT = '465';
-  expect((await post()).status).toBe(202);
-  expect(nodemailer.createTransport).toHaveBeenCalledWith(expect.objectContaining({
-    port: 465, secure: true, requireTLS: false,
-=======
 test('defaults to Brevo port 465 with implicit TLS and the Cluster sender name', async () => {
   delete process.env.SMTP_HOST;
   delete process.env.SMTP_PORT;
@@ -130,7 +100,6 @@ test('preserves STARTTLS and explicitly configured sender and host', async () =>
   }));
   expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({
     from: { name: 'Custom Sender', address: 'sender@example.com' },
->>>>>>> 5127ae4a8a7c8a204a8699ec90e529f60c1620b5
   }));
 });
 

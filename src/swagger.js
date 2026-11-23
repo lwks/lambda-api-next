@@ -24,13 +24,10 @@ const swaggerDefinition = {
   ],
   components: {
     securitySchemes: {
-<<<<<<< HEAD
-=======
       bearerAuth: {
         type: 'http', scheme: 'bearer', bearerFormat: 'JWT',
         description: 'JWT do usuário autenticado; histórico exige perfil CANDIDATE.',
       },
->>>>>>> 5127ae4a8a7c8a204a8699ec90e529f60c1620b5
       EmailServiceToken: {
         type: 'http', scheme: 'bearer',
         description: 'Chave EMAIL_SERVICE_TOKEN exclusiva do servidor; nao aceita JWT de usuario.',

@@ -1,5 +1,4 @@
-
-const { createHash, timingSafeEqual } = require('crypto');
+const { createHash, timingSafeEqual, randomUUID } = require('crypto');
 const { UnauthorizedError } = require('../utils/errors');
 const { unavailable } = require('../config/email');
 
@@ -14,6 +13,10 @@ function emailAuth(req, res, next) {
   if (!match || !timingSafeEqual(digest(match[1]), digest(expected))) {
     return next(new UnauthorizedError());
   }
+  req.authRequestId = req.authRequestId
+    || req.apiGateway?.context?.awsRequestId
+    || req.apiGateway?.event?.requestContext?.requestId
+    || randomUUID();
   return next();
 }
 
