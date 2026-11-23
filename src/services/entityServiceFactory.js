@@ -192,7 +192,7 @@ function createEntityService(entityType, providedTableName) {
     }
   }
 
-  async function list({ limit = 20, lastKey } = {}) {
+  async function list({ limit = 20, lastKey, jobStatus } = {}) {
     const params = {
       TableName: tableName,
       Limit: limit,
@@ -205,6 +205,14 @@ function createEntityService(entityType, providedTableName) {
       },
     };
 
+    if (entityType === 'job' && jobStatus) {
+      params.FilterExpression += jobStatus === 'closed'
+        ? ' AND #status = :closed'
+        : ' AND (attribute_not_exists(#status) OR #status <> :closed)';
+      params.ExpressionAttributeNames['#status'] = 'status';
+      params.ExpressionAttributeValues[':closed'] = 'Encerrada';
+    }
+
     if (lastKey) {
       params.ExclusiveStartKey = lastKey;
     }
@@ -215,15 +223,23 @@ function createEntityService(entityType, providedTableName) {
       limit,
       hasLastKey: Boolean(lastKey),
     });
-    const response = await documentClient.send(new ScanCommand(params));
+    // DynamoDB applies its filter after Limit. Continue across empty scan pages
+    // until the requested number of matching jobs or the end of the table.
+    const items = [];
+    let response;
+    do {
+      response = await documentClient.send(new ScanCommand({ ...params, Limit: limit - items.length }));
+      items.push(...(response.Items || []));
+      params.ExclusiveStartKey = response.LastEvaluatedKey;
+    } while (jobStatus && response.LastEvaluatedKey && items.length < limit);
     logger.info('Entity scan completed', {
       entityType,
-      itemCount: response.Items ? response.Items.length : 0,
+      itemCount: items.length,
       hasMore: Boolean(response.LastEvaluatedKey),
     });
 
     return {
-      items: response.Items || [],
+      items,
       lastEvaluatedKey: response.LastEvaluatedKey,
     };
   }
