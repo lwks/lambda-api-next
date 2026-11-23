@@ -1,7 +1,8 @@
 const mockSend = jest.fn();
+const mockFindJob = jest.fn();
 jest.mock('../../aws_services/dynamoClient', () => ({ documentClient: { send: mockSend } }));
 jest.mock('../../services/entityServiceFactory', () => ({ createEntityService: jest.fn(() => ({
-  findById: jest.fn(async () => ({ guid_id: 'job-1', status: 'Aberto' })),
+  findById: mockFindJob,
 })) }));
 
 const { createApplication, PROFILE_FIELDS } = require('../../services/candidateApplicationService');
@@ -17,6 +18,7 @@ const payload = { guid_vaga: 'job-1', mode: 'UPDATE_PROFILE', profile,
     lgpdAccepted: true, cvAction: 'KEEP' } };
 
 beforeEach(() => {
+  mockFindJob.mockReset().mockResolvedValue({ guid_id: 'job-1', status: 'Aberto' });
   mockSend.mockReset().mockImplementation(async () => ({}));
 });
 
@@ -27,10 +29,18 @@ test('checks the vacancy and conditionally writes profile and application in one
   expect(transaction).toBeTruthy();
   const [job, savedProfile, application] = transaction.input.TransactItems;
   expect(job.ConditionCheck).toMatchObject({ TableName: 'Vagas', Key: { guid_id: 'job-1' } });
+  expect(job.ConditionCheck.ConditionExpression).toContain('#status <> :closed');
+  expect(job.ConditionCheck.ExpressionAttributeValues[':closed']).toBe('Encerrada');
   expect(savedProfile.Put).toMatchObject({ TableName: 'candidato_perfil',
     ConditionExpression: 'attribute_not_exists(candidato_sub)', Item: { candidato_sub: 'candidate-1', version: 1 } });
   expect(application.Put).toMatchObject({ TableName: 'Candidaturas',
     ConditionExpression: 'attribute_not_exists(guid_id)', Item: { candidate_sub: 'candidate-1' } });
+});
+
+test('rejects a closed vacancy before reading or writing a profile or application', async () => {
+  mockFindJob.mockResolvedValueOnce({ guid_id: 'job-1', status: 'Encerrada' });
+  await expect(createApplication({ sub: 'candidate-1' }, payload)).rejects.toMatchObject({ statusCode: 409, message: 'Vacancy is closed' });
+  expect(mockSend).not.toHaveBeenCalled();
 });
 
 test('allows a profile without the optional idiomas field', async () => {

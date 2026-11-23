@@ -24,6 +24,10 @@ const swaggerDefinition = {
   ],
   components: {
     securitySchemes: {
+      bearerAuth: {
+        type: 'http', scheme: 'bearer', bearerFormat: 'JWT',
+        description: 'JWT do usuário autenticado; histórico exige perfil CANDIDATE.',
+      },
       EmailServiceToken: {
         type: 'http', scheme: 'bearer',
         description: 'Chave EMAIL_SERVICE_TOKEN exclusiva do servidor; nao aceita JWT de usuario.',
@@ -645,11 +649,33 @@ const swaggerDefinition = {
         },
       },
     },
+    '/api/candidates/me/applications': {
+      get: {
+        tags: ['Candidates'],
+        summary: 'Consulta o histórico do candidato autenticado ou uma candidatura por vaga',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { in: 'query', name: 'guid_vaga', schema: { type: 'string' }, description: 'Quando informado, retorna a candidatura individual (ou null)' },
+          { in: 'query', name: 'status', schema: { type: 'string', enum: ['open', 'closed', 'all'], default: 'open' }, description: 'Status atual da vaga; usado somente na consulta do histórico' },
+        ],
+        responses: {
+          200: { description: 'Envelope data com items do histórico, ou uma candidatura individual quando guid_vaga é informado' },
+          400: { description: 'Filtro inválido' },
+          401: { description: 'Autenticação obrigatória' },
+          403: { description: 'Perfil CANDIDATE obrigatório' },
+        },
+      },
+    },
     '/api/jobs': {
       get: {
         tags: ['Jobs'],
-        summary: 'Lista vagas com paginação opcional',
+        summary: 'Lista vagas abertas por padrão ou consulta o arquivo de encerradas',
         parameters: [
+          {
+            in: 'query', name: 'status',
+            schema: { type: 'string', enum: ['open', 'closed'], default: 'open' },
+            description: 'Filtra a listagem e a paginação pelo status da vaga',
+          },
           {
             in: 'query',
             name: 'limit',

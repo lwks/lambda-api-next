@@ -119,6 +119,28 @@ async function ownApplication(sub, jobGuid) {
   return item?.candidate_sub === sub ? item : null;
 }
 
+async function listOwnApplications(sub, status = 'open') {
+  if (!sub) throw new ForbiddenError('Candidate identity missing');
+  if (!['open', 'closed', 'all'].includes(status)) throw new ValidationError('status must be open, closed or all');
+  const candidates = createEntityService('candidate', TABLE_NAMES.candidate);
+  const records = await candidates.listByFieldValue({ field: 'candidate_sub', value: sub });
+  const jobByGuid = new Map();
+  // Resolve each vacancy once and keep the response limited to the caller's history.
+  for (const guid of new Set(records.map(record => record.guid_vaga))) {
+    try { jobByGuid.set(guid, await jobs.findById(guid)); }
+    catch (error) { if (error.statusCode !== 404) throw error; }
+  }
+  const items = records.map(record => {
+    const job = jobByGuid.get(record.guid_vaga);
+    return { id: record.guid_id, jobGuid: record.guid_vaga, title: job?.titulo || 'Vaga indisponível',
+      company: job?.empresa || '', jobStatus: job?.status || null, status: record.status,
+      createdAt: record.createdAt, closedAt: job?.encerrada_em || null };
+  }).filter(item => status === 'all' || (status === 'closed'
+    ? item.jobStatus === 'Encerrada' : item.jobStatus !== 'Encerrada' && item.jobStatus !== null));
+  items.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  return { items };
+}
+
 async function createApplication(auth, body, { legacyCv = false } = {}) {
   const sub = auth?.sub;
   if (!sub) throw new ForbiddenError('Candidate identity missing');
@@ -190,4 +212,4 @@ async function createApplication(auth, body, { legacyCv = false } = {}) {
   return record;
 }
 
-module.exports = { getProfile, saveProfile, ownApplication, createApplication, applicationId, needsLgpd, PROFILE_FIELDS };
+module.exports = { getProfile, saveProfile, ownApplication, listOwnApplications, createApplication, applicationId, needsLgpd, PROFILE_FIELDS };

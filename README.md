@@ -1,5 +1,11 @@
 # README — Guia real do repositório `lambda-api-next`
 
+## Vagas públicas e histórico do candidato
+
+- `GET /api/jobs` mostra somente abertas por padrão. `status=closed` consulta encerradas; `status=open` explicita o padrão. Outros valores retornam 400. `limit` e `lastKey` paginam dentro do status selecionado, inclusive quando uma página de scan DynamoDB não tem correspondências. `/api/jobs/mine` mantém o histórico da empresa.
+- `GET /api/candidates/me/applications?status=open|closed|all` lista exclusivamente as candidaturas da identidade CANDIDATE autenticada (padrão `open`), com título/status atual da vaga e etapa da candidatura. Não aceita uma identidade de candidato enviada pelo cliente. `guid_vaga` preserva a consulta individual existente. Vagas removidas aparecem apenas em `all`, como indisponíveis.
+- Vagas encerradas permanecem acessíveis pelo detalhe. Novas candidaturas são rejeitadas com 409; uma condição na transação DynamoDB impede a gravação caso a vaga seja encerrada depois da leitura inicial.
+
 ## Envio de e-mail transacional
 
 `POST /api/emails` envia uma mensagem para **um destinatário**, usando SMTP Brevo.

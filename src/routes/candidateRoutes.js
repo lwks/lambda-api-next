@@ -31,7 +31,11 @@ router.get('/me/cv-download', requireAccountType('CANDIDATE'), async (req, res, 
   } catch (error) { return next(error); }
 });
 router.get('/me/applications', requireAccountType('CANDIDATE'), async (req, res, next) => {
-  try { return success(res, await applications.ownApplication(req.auth.sub, req.query.guid_vaga)); } catch (error) { return next(error); }
+  try {
+    return success(res, req.query.guid_vaga !== undefined
+      ? await applications.ownApplication(req.auth.sub, req.query.guid_vaga)
+      : await applications.listOwnApplications(req.auth.sub, req.query.status));
+  } catch (error) { return next(error); }
 });
 router.post('/applications', requireAccountType('CANDIDATE'), async (req, res, next) => {
   try { return created(res, await applications.createApplication(req.auth, req.body)); } catch (error) { return next(error); }
