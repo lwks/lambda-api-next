@@ -1,5 +1,14 @@
 # API no harness local
 
+## Encerramento e reabertura por ciclo
+
+- `POST /api/jobs/:id/close` recebe `{ ciclo, motivo_encerramento? }`; `POST /api/jobs/:id/reopen` recebe `{ ciclo }`. Ambos exigem a empresa proprietária. O número identifica o ciclo exibido ao usuário, protegendo ações feitas em abas desatualizadas. Encerramentos legados sem `ciclo` referem-se somente ao ciclo 1.
+- Vagas legadas e candidaturas sem ciclo pertencem ao ciclo 1. Reabrir incrementa `ciclo_atual`, preserva GUID/link e não altera `publicada_em`. Candidatar-se envia `ciclo` e é único por candidato/vaga/ciclo. A ausência de `ciclo` só é compatível com o ciclo 1.
+- Pendentes (Novos, RH, Técnica e Proposta) deixam a pipeline ao encerrar. Contratados e Rejeitados permanecem somente para consulta. O histórico usa a etapa preservada e o evento imutável de encerramento para registrar a remoção sem apagar snapshots, CV ou anotações internas.
+- `GET /api/candidates/by-job-guids` aceita `scope=pipeline` (padrão), `scope=history` (processos encerrados) ou `scope=cycle&ciclo=N` (destinatários daquele ciclo), com a mesma verificação de propriedade. Os registros retornam `ciclo`, `somenteLeitura`, `cicloAnterior`, `removidaDaSelecao` e `historico`.
+- `GET /api/candidates/me/applications` mantém o processo anterior encerrado após a reabertura e nunca inclui anotações internas. A consulta por `guid_vaga` verifica somente a inscrição do ciclo atual.
+- No DynamoDB, eventos de encerramento são itens `entityType=job-cycle` na tabela de vagas, gravados atomicamente com o status. Não são listados como vagas. No harness, ficam em `jobCycle` no mesmo JSON e são salvos na mesma operação que a vaga. O histórico público não inclui o motivo privado da empresa.
+
 Requer Node.js 22+ e npm, com os repositórios irmãos `front-nex-ats` e `lambda-api-next`, ambos com as mudanças de `feature/config-harness`.
 
 A partir da pasta pai:

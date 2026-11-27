@@ -61,7 +61,7 @@ test('closes a company vacancy once, keeps its reason private, and blocks new or
   expect(closed.status).toBe(200);
   expect(closed.body.data).toMatchObject({ status: 'Encerrada', motivo_encerramento: 'Contratação concluída' });
   expect(closed.body.data.encerrada_em).toBeTruthy();
-  expect((await request(app).post(`/api/jobs/${jobId}/close`).set(headers).send({})).status).toBe(409);
+  expect((await request(app).post(`/api/jobs/${jobId}/close`).set(headers).send({})).status).toBe(200);
   expect((await request(app).put(`/api/jobs/${jobId}`).set(headers).send({ status: 'Aberto' })).status).toBe(409);
   expect((await request(app).delete(`/api/jobs/${jobId}`).set(headers)).status).toBe(409);
 
@@ -90,7 +90,7 @@ test('closes a company vacancy once, keeps its reason private, and blocks new or
   expect(newApplication.status).toBe(409);
   await request(app).post(`/api/jobs/${JOB_ID}/close`).set(headers).send({});
   const update = await request(app).put(`/api/candidates/${CANDIDATE_ID}`).set(headers).send({ status: 'contratado' });
-  expect(update.status).toBe(400);
+  expect(update.status).toBe(409);
 });
 
 test('company vacancy list is scoped to the authenticated owner', async () => {
@@ -159,6 +159,103 @@ function completeProfile(name = 'Candidate Local') {
   return Object.fromEntries(PROFILE_FIELDS.filter(field => !['indicacao', 'indicacoes'].includes(field))
     .map(field => [field, field === 'idiomas' ? [{ idioma: 'Inglês', fluencia: 'Fluente' }] : arrays.has(field) ? ['1'] : name]));
 }
+
+test('removes only pending applications and reopens without resurrecting them or losing candidate history', async () => {
+  const company = { Authorization: 'Bearer company' }, candidate = { Authorization: 'Bearer candidate' };
+  const db = read(); db.candidate = []; save(db);
+  const first = await request(app).post('/api/candidates/applications').set(candidate).send({
+    guid_vaga: JOB_ID, ciclo: 1, mode: 'UPDATE_PROFILE', profile: completeProfile('Cycle Candidate'),
+    application: { mensagemEmpresa: 'First cycle', pretensaoSalarial: '10000', compartilhamentoAccepted: true, lgpdAccepted: true, cvAction: 'KEEP' },
+  });
+  expect(first.status).toBe(201);
+  const firstId = first.body.data.guid_id;
+  await request(app).put(`/api/candidates/${firstId}`).set(company).send({ status: 'entrevista-rh', anotacoes: 'Private recruiter note' });
+  const fixtures = read();
+  for (const status of ['novo', 'entrevista-tecnica', 'proposta', 'contratado', 'rejeitado']) {
+    fixtures.candidate.push({ ...fixtures.candidate[0], guid_id: `fixture-${status}`, id: `fixture-${status}`, candidate_sub: `other-${status}`, status });
+  }
+  const originalTitle = fixtures.job[0].titulo;
+  save(fixtures);
+  const closed = await request(app).post(`/api/jobs/${JOB_ID}/close`).set(company).send({ ciclo: 1, motivo_encerramento: 'Private closure reason' });
+  expect(closed.status).toBe(200);
+  expect(read().jobCycle).toHaveLength(1);
+  const pipeline = (await request(app).get(`/api/candidates/by-job-guids?guid_vaga=${JOB_ID}`).set(company)).body.data.items;
+  expect(pipeline.map(item => item.status).sort()).toEqual(['contratado', 'rejeitado']);
+  expect(pipeline.every(item => item.somenteLeitura)).toBe(true);
+  const history = (await request(app).get(`/api/candidates/by-job-guids?guid_vaga=${JOB_ID}&scope=history`).set(company)).body.data.items;
+  expect(history).toHaveLength(6);
+  expect(history.filter(item => item.removidaDaSelecao)).toHaveLength(4);
+  expect(history.find(item => item.guid_id === firstId).historico[0].mensagem).toContain('Última etapa: Entrevista RH');
+  expect((await request(app).put(`/api/candidates/${firstId}`).set(company).send({ anotacoes: 'Changed after close' })).status).toBe(409);
+
+  const reopened = await request(app).post(`/api/jobs/${JOB_ID}/reopen`).set(company).send({ ciclo: 1 });
+  expect(reopened.status).toBe(200);
+  expect(reopened.body.data).toMatchObject({ guid_id: JOB_ID, status: 'Aberto', ciclo_atual: 2 });
+  expect(reopened.body.data).not.toHaveProperty('motivo_encerramento');
+  expect((await request(app).get(`/api/candidates/me/applications?guid_vaga=${JOB_ID}`).set(candidate)).body.data).toBeNull();
+  expect((await request(app).put(`/api/candidates/${firstId}`).set(company).send({ status: 'contratado' })).status).toBe(409);
+  expect((await request(app).post(`/api/jobs/${JOB_ID}/close`).set(company).send({ ciclo: 1 })).status).toBe(409);
+  const edited = await request(app).put(`/api/jobs/${JOB_ID}`).set(company).send({ titulo: 'New cycle title', ciclo_atual: 99, status: 'Encerrada' });
+  expect(edited.body.data).toMatchObject({ titulo: 'New cycle title', ciclo_atual: 2, status: 'Aberto' });
+
+  const reuse = { guid_vaga: JOB_ID, ciclo: 2, mode: 'USE_SAVED_PROFILE', profileVersion: 1,
+    application: { mensagemEmpresa: 'Second cycle', pretensaoSalarial: '12000', compartilhamentoAccepted: true, cvAction: 'KEEP' } };
+  expect((await request(app).post('/api/candidates/applications').set(candidate).send({ ...reuse, ciclo: 1 })).status).toBe(409);
+  const second = await request(app).post('/api/candidates/applications').set(candidate).send(reuse);
+  expect(second.status).toBe(201);
+  expect(second.body.data.guid_id).not.toBe(firstId);
+  expect((await request(app).post('/api/candidates/applications').set(candidate).send(reuse)).status).toBe(409);
+  const all = (await request(app).get('/api/candidates/me/applications?status=all').set(candidate)).body.data.items;
+  expect(all).toHaveLength(2);
+  expect(all.find(item => item.ciclo === 1)).toMatchObject({ jobStatus: 'Encerrada', title: originalTitle, status: 'Entrevista RH' });
+  expect(all.find(item => item.ciclo === 2)).toMatchObject({ jobStatus: 'Aberto', title: 'New cycle title' });
+  expect(JSON.stringify(all)).not.toContain('Private');
+  const lookup = (await request(app).get(`/api/candidates/me/applications?guid_vaga=${JOB_ID}`).set(candidate)).body.data;
+  expect(lookup).toEqual({ guid_id: second.body.data.guid_id, ciclo: 2 });
+  const currentRecipients = (await request(app).get(`/api/candidates/by-job-guids?guid_vaga=${JOB_ID}&scope=cycle&ciclo=2`).set(company)).body.data.items;
+  expect(currentRecipients.map(item => item.guid_id)).toEqual([second.body.data.guid_id]);
+  const finalPipeline = (await request(app).get(`/api/candidates/by-job-guids?guid_vaga=${JOB_ID}`).set(company)).body.data.items;
+  expect(finalPipeline).toHaveLength(3);
+  expect(finalPipeline.filter(item => item.cicloAnterior).every(item => item.somenteLeitura)).toBe(true);
+  expect((await request(app).delete(`/api/jobs/${JOB_ID}`).set(company)).status).toBe(403);
+});
+
+test('protects reopening, validates cycles and scopes, and never overwrites an existing vacancy', async () => {
+  const url = `/api/jobs/${JOB_ID}/reopen`;
+  expect((await request(app).post(url).send({ ciclo: 1 })).status).toBe(401);
+  expect((await request(app).post(url).set('Authorization', 'Bearer candidate').send({ ciclo: 1 })).status).toBe(403);
+  expect((await request(app).post(url).set('Authorization', 'Bearer other-company').send({ ciclo: 1 })).status).toBe(403);
+  const headers = { Authorization: 'Bearer company' };
+  expect((await request(app).post(url).set(headers).send({ ciclo: 1 })).status).toBe(409);
+  for (const ciclo of [undefined, 0, -1, '1', 1.5]) {
+    expect((await request(app).post(url).set(headers).send({ ciclo })).status).toBe(400);
+  }
+  expect((await request(app).get(`/api/candidates/by-job-guids?guid_vaga=${JOB_ID}&scope=invalid`).set(headers)).status).toBe(400);
+  expect((await request(app).get(`/api/candidates/by-job-guids?guid_vaga=${JOB_ID}&scope=cycle&ciclo=bad`).set(headers)).status).toBe(400);
+  expect((await request(app).post('/api/jobs').set(headers).send({ guid_id: JOB_ID, titulo: 'Overwrite attempt' })).status).toBe(409);
+  expect(read().job[0].titulo).not.toBe('Overwrite attempt');
+  expect(read().jobCycle).toHaveLength(0);
+});
+
+test('concurrent lifecycle requests produce one closure per cycle and preserve legacy dates', async () => {
+  const headers = { Authorization: 'Bearer company' };
+  const close = () => request(app).post(`/api/jobs/${JOB_ID}/close`).set(headers).send({ ciclo: 1 });
+  const closed = await Promise.all([close(), close()]);
+  expect(closed.some(result => result.status === 200)).toBe(true);
+  expect(closed.every(result => [200, 409].includes(result.status))).toBe(true);
+  expect(read().jobCycle).toHaveLength(1);
+  const reopen = () => request(app).post(`/api/jobs/${JOB_ID}/reopen`).set(headers).send({ ciclo: 1 });
+  const reopened = await Promise.all([reopen(), reopen()]);
+  expect(reopened.some(result => result.status === 200)).toBe(true);
+  expect(read().job[0].ciclo_atual).toBe(2);
+  expect(read().jobCycle).toHaveLength(1);
+  expect((await reopen()).status).toBe(200);
+  const db = seed(); db.job[0].status = 'Encerrada'; db.job[0].encerrada_em = '2020-01-01T00:00:00.000Z'; save(db);
+  const legacyClosed = await close();
+  expect(legacyClosed.body.data).toMatchObject({ status: 'Encerrada', ciclo_atual: 1, encerrada_em: '2020-01-01T00:00:00.000Z' });
+  expect((await reopen()).status).toBe(200);
+  expect(read().jobCycle[0].encerrada_em).toBe('2020-01-01T00:00:00.000Z');
+});
 
 test('creates own profile and immutable application snapshots, then reuses without refilling', async () => {
   const candidate = { Authorization: 'Bearer candidate' };
