@@ -1,4 +1,5 @@
 const mockJobs = { findById: jest.fn() }, mockCandidates = { listByFieldValue: jest.fn() };
+jest.mock('../../aws_services/dynamoClient', () => ({ documentClient: { send: jest.fn(async () => ({})) } }));
 jest.mock('../../services/entityServiceFactory', () => ({ createEntityService: type => type === 'job' ? mockJobs : mockCandidates }));
 const { listOwnApplications } = require('../../services/candidateApplicationService');
 beforeEach(() => {
@@ -7,11 +8,11 @@ beforeEach(() => {
     { guid_id: 'a', guid_vaga: 'open', status: 'Novo', createdAt: '2026-01-01' },
     { guid_id: 'b', guid_vaga: 'closed', status: 'Entrevista', createdAt: '2026-02-01' },
   ]);
-  mockJobs.findById.mockImplementation(async guid => ({ titulo: guid, status: guid === 'closed' ? 'Encerrada' : 'Aberto' }));
+  mockJobs.findById.mockImplementation(async guid => ({ guid_id: guid, titulo: guid, status: guid === 'closed' ? 'Encerrada' : 'Aberto' }));
 });
 test('restricts lookup to the authenticated identity and filters using the current vacancy status', async () => {
   expect((await listOwnApplications('me', 'closed')).items.map(row => row.id)).toEqual(['b']);
-  expect(mockCandidates.listByFieldValue).toHaveBeenCalledWith({ field: 'candidate_sub', value: 'me' });
+  expect(mockCandidates.listByFieldValue).toHaveBeenCalledWith({ field: 'candidate_sub', value: 'me', consistentRead: true });
   expect((await listOwnApplications('me')).items.map(row => row.id)).toEqual(['a']);
   expect((await listOwnApplications('me', 'all')).items.map(row => row.id)).toEqual(['b', 'a']);
 });

@@ -4,6 +4,7 @@ const {
   listJobs,
   listCompanyJobs,
   closeJob,
+  reopenJob,
   getJob,
   updateJob,
   deleteJob,
@@ -15,6 +16,7 @@ const router = express.Router();
 router.post('/', requireAccountType('COMPANY'), createJob);
 router.get('/mine', requireAccountType('COMPANY'), listCompanyJobs);
 router.post('/:id/close', requireAccountType('COMPANY'), closeJob);
+router.post('/:id/reopen', requireAccountType('COMPANY'), reopenJob);
 router.get('/', listJobs);
 router.get('/:id', getJob);
 router.put('/:id', requireAccountType('COMPANY'), updateJob);

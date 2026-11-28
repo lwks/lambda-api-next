@@ -8,6 +8,7 @@ const cvStorage = require('../services/cvStorageService');
 const jobService = createEntityService('job', TABLE_NAMES.job);
 const { ForbiddenError } = require('../utils/errors');
 const applications = require('../services/candidateApplicationService');
+const lifecycle = require('../services/jobLifecycleService');
 
 const candidateService = createEntityService('candidate', TABLE_NAMES.candidate);
 
@@ -19,6 +20,7 @@ async function createCandidate(req, res, next) {
     const existingProfile = await applications.getProfile(req.auth.sub);
     const application = await applications.createApplication(req.auth, {
       guid_vaga: body.guid_vaga, mode: 'UPDATE_PROFILE', profile,
+      ciclo: body.ciclo,
       ...(existingProfile ? { profileVersion: existingProfile.version } : {}),
       application: { mensagemEmpresa: body.mensagemEmpresa || '', pretensaoSalarial: body.pretensaoSalarial || '',
         compartilhamentoAccepted: body.compartilhamentoAccepted, lgpdAccepted: body.lgpdAccepted,
@@ -48,16 +50,26 @@ async function listCandidatesByJobGuids(req, res, next) {
     if (normalizedJobGuids.length === 0) {
       throw new ValidationError('guid_vaga must contain at least one non-empty string');
     }
+    const jobByGuid = new Map();
     for (const guid of normalizedJobGuids) {
-      const job = await jobService.findById(guid);
+      const job = await jobService.findById(guid, { consistentRead: true });
       if (!req.auth?.sub || job.owner_sub !== req.auth.sub) throw new ForbiddenError('Company does not own this vacancy');
+      jobByGuid.set(guid, job);
     }
 
     logger.info('Listing candidates by guid_vaga list', { jobGuidCount: normalizedJobGuids.length });
-    const candidates = await candidateService.listByFieldValues({
+    const records = await candidateService.listByFieldValues({
       field: 'guid_vaga',
       values: normalizedJobGuids,
+      consistentRead: true,
     });
+
+    const scope = req.query.scope || 'pipeline';
+    if (!['pipeline', 'history', 'cycle'].includes(scope)) throw new ValidationError('Escopo de candidaturas inválido.');
+    const cycle = req.query.ciclo === undefined ? undefined : Number(req.query.ciclo);
+    if (scope === 'cycle' && (!Number.isSafeInteger(cycle) || cycle < 1)) throw new ValidationError('Ciclo inválido.');
+    const candidates = (await lifecycle.describeApplications(records, jobByGuid)).filter(item => scope === 'history'
+      ? item.candidaturaEncerrada : scope === 'cycle' ? item.ciclo === cycle : !item.removidaDaSelecao);
 
     logger.info('Candidates filtered by guid_vaga', { itemCount: candidates.length });
     return success(res, { items: candidates, total: candidates.length });
@@ -74,9 +86,11 @@ async function listCandidates(req, res, next) {
     const limit = Number.isNaN(limitParam) ? 20 : Math.min(Math.max(limitParam, 1), 100);
     const lastKey = decodeLastKey(req.query.lastKey);
     logger.info('Listing candidates with pagination parameters', { limit, hasLastKey: Boolean(lastKey) });
-    const ownedJobs = await jobService.listByFieldValue({ field: 'owner_sub', value: req.auth.sub });
+    const ownedJobs = await jobService.listByFieldValue({ field: 'owner_sub', value: req.auth.sub, consistentRead: true });
     const ownedIds = ownedJobs.map(job => job.guid_id);
-    const items = ownedIds.length ? await candidateService.listByFieldValues({ field: 'guid_vaga', values: ownedIds }) : [];
+    const records = ownedIds.length ? await candidateService.listByFieldValues({ field: 'guid_vaga', values: ownedIds, consistentRead: true }) : [];
+    const items = (await lifecycle.describeApplications(records, new Map(ownedJobs.map(job => [job.guid_id, job]))))
+      .filter(item => !item.removidaDaSelecao);
     items.sort((a, b) => String(a.guid_id).localeCompare(String(b.guid_id)));
     const afterCursor = lastKey?.guid_id ? items.filter(item => String(item.guid_id) > String(lastKey.guid_id)) : items;
     const page = afterCursor.slice(0, limit);
@@ -102,9 +116,10 @@ async function getCandidate(req, res, next) {
   try {
     logger.info('Received request to fetch candidate', { params: req.params });
     const candidate = await candidateService.findById(req.params.id);
-    await assertCompanyOwnsCandidate(req.auth, candidate);
+    const job = await assertCompanyOwnsCandidate(req.auth, candidate);
     logger.info('Candidate fetched from DynamoDB', { candidateId: candidate.id });
-    return success(res, candidate);
+    const [described] = await lifecycle.describeApplications([candidate], new Map([[job.guid_id, job]]));
+    return success(res, described);
   } catch (error) {
     logger.error('Failed to fetch candidate', { params: req.params, error: error.message, stack: error.stack });
     return next(error);
@@ -115,18 +130,10 @@ async function updateCandidate(req, res, next) {
   try {
     logger.info('Received request to update candidate', { params: req.params });
     const existing = await candidateService.findById(req.params.id);
-    await assertCompanyOwnsCandidate(req.auth, existing);
+    const job = await assertCompanyOwnsCandidate(req.auth, existing);
     const allowed = ['status', 'anotacoes'];
     if (Object.keys(req.body || {}).some(field => !allowed.includes(field))) throw new ValidationError('Only status and notes can be updated');
-    if (existing.guid_vaga) {
-      const job = await jobService.findById(existing.guid_vaga);
-      if (job.owner_sub !== req.auth?.sub) {
-        const { ForbiddenError } = require('../utils/errors');
-        throw new ForbiddenError('Company does not own this vacancy');
-      }
-      if (job.status === 'Encerrada') throw new ValidationError('Applications for a closed vacancy are read-only');
-    }
-    const candidate = await candidateService.update(req.params.id, req.body);
+    const candidate = await lifecycle.updateApplication(existing, job, req.auth.sub, req.body || {});
     logger.info('Candidate updated in DynamoDB', { candidateId: candidate.id });
     return success(res, candidate);
   } catch (error) {
@@ -153,8 +160,9 @@ async function deleteCandidate(req, res, next) {
 
 async function assertCompanyOwnsCandidate(auth, candidate) {
   if (!auth?.sub || !candidate.guid_vaga) throw new ForbiddenError('Company does not own this vacancy');
-  const job = await jobService.findById(candidate.guid_vaga);
+  const job = await jobService.findById(candidate.guid_vaga, { consistentRead: true });
   if (job.owner_sub !== auth.sub) throw new ForbiddenError('Company does not own this vacancy');
+  return job;
 }
 
 async function createCvUpload(req, res, next) {

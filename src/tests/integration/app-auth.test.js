@@ -7,6 +7,7 @@ jest.mock('../../controllers/jobController', () => ({
   listJobs: (req, res) => res.json({ data: { route: 'listJobs' } }),
   listCompanyJobs: (req, res) => res.json({ data: { route: 'listCompanyJobs', auth: req.auth || null } }),
   closeJob: (req, res) => res.json({ data: { route: 'closeJob', auth: req.auth || null } }),
+  reopenJob: (req, res) => res.json({ data: { route: 'reopenJob', auth: req.auth || null } }),
   getJob: (req, res) => res.json({ data: { route: 'getJob', id: req.params.id } }),
   updateJob: (req, res) => res.json({ data: { route: 'updateJob', auth: req.auth || null } }),
   deleteJob: (req, res) => res.status(204).send(),

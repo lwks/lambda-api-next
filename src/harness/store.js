@@ -27,6 +27,7 @@ function seed() {
     company: [{ ...dates, id: 'local-company', cd_cnpj: '00000000000100', entityType: 'company', nome: 'Empresa Local' }],
     user: [],
     profile: [],
+    jobCycle: [],
   };
 }
 
@@ -55,6 +56,9 @@ function createLocalEntityService(entityType) {
     async create(payload) {
       if (!payload[key]) throw new ValidationError(`Missing primary key: ${key}`);
       const db = read();
+      if (entityType === 'job' && db.job.some(row => row.guid_id === payload.guid_id)) {
+        throw Object.assign(new Error('Vacancy already exists'), { statusCode: 409 });
+      }
       const now = new Date().toISOString();
       const item = { ...payload, id: payload.id || payload[key] || randomUUID(), entityType,
         createdAt: payload.createdAt || now, updatedAt: now };
@@ -64,9 +68,14 @@ function createLocalEntityService(entityType) {
       return item;
     },
     async findById(id) { return find(read()[entityType], id); },
-    async update(id, updates) {
+    async update(id, updates, options = {}) {
       const db = read();
       const item = find(db[entityType], id);
+      if (entityType === 'job' && (item.status === 'Encerrada'
+        || (options.expectedCycle !== undefined && options.expectedCycle !== (item.ciclo_atual || 1))
+        || (options.ownerSub && options.ownerSub !== item.owner_sub))) {
+        throw Object.assign(new Error('A vaga mudou ou foi encerrada. Recarregue a página.'), { statusCode: 409 });
+      }
       const allowed = Object.fromEntries(Object.entries(updates).filter(([field, value]) =>
         !['id', 'entityType', key, 'updatedAt'].includes(field) && value !== undefined));
       Object.assign(item, allowed, { updatedAt: new Date().toISOString() });
@@ -76,6 +85,9 @@ function createLocalEntityService(entityType) {
     async remove(id) {
       const db = read();
       const item = find(db[entityType], id);
+      if (entityType === 'job' && (item.status === 'Encerrada' || (item.ciclo_atual || 1) > 1)) {
+        throw Object.assign(new Error('Vagas com histórico de encerramento não podem ser excluídas.'), { statusCode: 409 });
+      }
       db[entityType] = db[entityType].filter(row => row !== item);
       save(db);
       return true;
@@ -94,22 +106,7 @@ function createLocalEntityService(entityType) {
       return read()[entityType].filter(row => row[field] === value);
     },
     async close(id, ownerSub, reason) {
-      const db = read();
-      const item = find(db[entityType], id);
-      if (item.owner_sub !== ownerSub) {
-        const { ForbiddenError } = require('../utils/errors');
-        throw new ForbiddenError('Company does not own this vacancy');
-      }
-      if (item.status === 'Encerrada') {
-        const error = new Error('Vacancy is already closed');
-        error.statusCode = 409;
-        throw error;
-      }
-      const now = new Date().toISOString();
-      Object.assign(item, { status: 'Encerrada', encerrada_em: now, updatedAt: now });
-      if (reason) item.motivo_encerramento = reason;
-      save(db);
-      return item;
+      return require('../services/jobLifecycleService').transition(id, ownerSub, 'close', { reason });
     },
   };
 }

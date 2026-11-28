@@ -18,7 +18,7 @@ test('records the verified company identity and ignores a forged owner', async (
   mockJobs.create.mockImplementation(async (payload) => payload);
   const res = response();
   await createJob({ body: { guid_id: 'job-1', owner_sub: 'attacker' }, auth: { sub: 'company-1' } }, res, jest.fn());
-  expect(mockJobs.create).toHaveBeenCalledWith({ guid_id: 'job-1', owner_sub: 'company-1' });
+  expect(mockJobs.create).toHaveBeenCalledWith({ guid_id: 'job-1', owner_sub: 'company-1', status: 'Aberto', ciclo_atual: 1 });
   expect(res.status).toHaveBeenCalledWith(201);
 });
 
@@ -32,6 +32,6 @@ test('rejects a company context without an identity', async () => {
 test('does not permit updating the owner', async () => {
   mockJobs.findById.mockResolvedValue({ guid_id: 'job-1', owner_sub: 'company-1', status: 'Aberto' });
   mockJobs.update.mockResolvedValue({ guid_id: 'job-1' });
-  await updateJob({ params: { id: 'job-1' }, body: { titulo: 'New title', owner_sub: 'attacker' } }, response(), jest.fn());
-  expect(mockJobs.update).toHaveBeenCalledWith('job-1', { titulo: 'New title' });
+  await updateJob({ params: { id: 'job-1' }, auth: { sub: 'company-1' }, body: { titulo: 'New title', owner_sub: 'attacker' } }, response(), jest.fn());
+  expect(mockJobs.update).toHaveBeenCalledWith('job-1', { titulo: 'New title' }, { expectedCycle: 1, ownerSub: 'company-1' });
 });

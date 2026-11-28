@@ -79,10 +79,11 @@ function createEntityService(entityType, providedTableName) {
   const primaryKey = PRIMARY_KEYS[entityType];
   if (!primaryKey) throw new Error(`Unsupported entity type: ${entityType}`);
 
-  async function findItemById(id) {
+  async function findItemById(id, { consistentRead = false } = {}) {
     const direct = await documentClient.send(new GetCommand({
       TableName: tableName,
       Key: { [primaryKey]: id },
+      ConsistentRead: consistentRead,
     }));
     if (direct.Item?.entityType === entityType) return direct.Item;
 
@@ -91,6 +92,7 @@ function createEntityService(entityType, providedTableName) {
     do {
       const response = await documentClient.send(new ScanCommand({
         TableName: tableName,
+        ConsistentRead: consistentRead,
         FilterExpression: '#id = :id AND #entityType = :entityType',
         ExpressionAttributeNames: { '#id': 'id', '#entityType': 'entityType' },
         ExpressionAttributeValues: { ':id': id, ':entityType': entityType },
@@ -108,14 +110,18 @@ function createEntityService(entityType, providedTableName) {
     await documentClient.send(new PutCommand({
       TableName: tableName,
       Item: item,
-    }));
+      ...(entityType === 'job' ? { ConditionExpression: 'attribute_not_exists(guid_id)' } : {}),
+    })).catch(error => {
+      if (error.name === 'ConditionalCheckFailedException') throw Object.assign(new Error('Vacancy already exists'), { statusCode: 409 });
+      throw error;
+    });
     logger.info('Entity persisted successfully', { entityType, id: item.id });
     return item;
   }
 
-  async function findById(id) {
+  async function findById(id, options) {
     logger.info('Fetching entity from DynamoDB', { entityType, tableName, id });
-    const item = await findItemById(id);
+    const item = await findItemById(id, options);
 
     if (!item) {
       logger.warn('Entity not found during fetch', { entityType, id });
@@ -126,7 +132,7 @@ function createEntityService(entityType, providedTableName) {
     return item;
   }
 
-  async function update(id, updates) {
+  async function update(id, updates, options = {}) {
     const updateExpression = buildUpdateExpression(updates, primaryKey);
 
     if (!updateExpression) {
@@ -135,15 +141,24 @@ function createEntityService(entityType, providedTableName) {
     }
 
     try {
-      const item = await findById(id);
+      const item = await findById(id, { consistentRead: entityType === 'job' });
+      let jobGuard;
+      if (entityType === 'job') {
+        const lifecycle = require('./jobLifecycleService');
+        if (item.status === 'Encerrada' || (options.expectedCycle !== undefined && options.expectedCycle !== lifecycle.cycleOf(item))) {
+          throw Object.assign(new Error('A vaga mudou ou foi encerrada. Recarregue a página.'), { statusCode: 409 });
+        }
+        jobGuard = lifecycle.cycleCondition(item, { open: true, owner: options.ownerSub });
+      }
       logger.info('Updating entity in DynamoDB', { entityType, tableName, id });
       const response = await documentClient.send(new UpdateCommand({
         TableName: tableName,
         Key: { [primaryKey]: item[primaryKey] },
         ...updateExpression,
-        ConditionExpression: 'attribute_exists(#primaryKey) AND #id = :expectedId',
-        ExpressionAttributeNames: { ...updateExpression.ExpressionAttributeNames, '#primaryKey': primaryKey, '#id': 'id' },
-        ExpressionAttributeValues: { ...updateExpression.ExpressionAttributeValues, ':expectedId': item.id },
+        ConditionExpression: 'attribute_exists(#primaryKey) AND #id = :expectedId'
+          + (jobGuard ? ` AND (${jobGuard.ConditionExpression})` : ''),
+        ExpressionAttributeNames: { ...updateExpression.ExpressionAttributeNames, ...jobGuard?.ExpressionAttributeNames, '#primaryKey': primaryKey, '#id': 'id' },
+        ExpressionAttributeValues: { ...updateExpression.ExpressionAttributeValues, ...jobGuard?.ExpressionAttributeValues, ':expectedId': item.id },
         ReturnValues: 'ALL_NEW',
       }));
 
@@ -152,6 +167,7 @@ function createEntityService(entityType, providedTableName) {
     } catch (error) {
       if (error.name === 'ConditionalCheckFailedException') {
         logger.warn('Entity not found during update', { entityType, id });
+        if (entityType === 'job') throw Object.assign(new Error('A vaga mudou ou foi encerrada. Recarregue a página.'), { statusCode: 409 });
         throw new NotFoundError(`${entityType} with id ${id} not found`);
       }
       logger.error('Failed to update entity in DynamoDB', {
@@ -171,15 +187,19 @@ function createEntityService(entityType, providedTableName) {
       await documentClient.send(new DeleteCommand({
         TableName: tableName,
         Key: { [primaryKey]: item[primaryKey] },
-        ConditionExpression: 'attribute_exists(#primaryKey) AND #id = :expectedId',
-        ExpressionAttributeNames: { '#primaryKey': primaryKey, '#id': 'id' },
-        ExpressionAttributeValues: { ':expectedId': item.id },
+        ConditionExpression: 'attribute_exists(#primaryKey) AND #id = :expectedId'
+          + (entityType === 'job' ? ' AND (attribute_not_exists(#cycle) OR #cycle = :first) AND (attribute_not_exists(#status) OR #status <> :closed)' : ''),
+        ExpressionAttributeNames: { '#primaryKey': primaryKey, '#id': 'id',
+          ...(entityType === 'job' ? { '#cycle': 'ciclo_atual', '#status': 'status' } : {}) },
+        ExpressionAttributeValues: { ':expectedId': item.id,
+          ...(entityType === 'job' ? { ':first': 1, ':closed': 'Encerrada' } : {}) },
       }));
       logger.info('Entity removed successfully', { entityType, id });
       return true;
     } catch (error) {
       if (error.name === 'ConditionalCheckFailedException') {
         logger.warn('Entity not found during removal', { entityType, id });
+        if (entityType === 'job') throw Object.assign(new Error('A vaga mudou ou possui histórico de encerramento. Recarregue a página.'), { statusCode: 409 });
         throw new NotFoundError(`${entityType} with id ${id} not found`);
       }
       logger.error('Failed to remove entity from DynamoDB', {
@@ -244,7 +264,7 @@ function createEntityService(entityType, providedTableName) {
     };
   }
 
-  async function listByFieldValues({ field, values }) {
+  async function listByFieldValues({ field, values, consistentRead = false }) {
     logger.info('Scanning entities by field values from DynamoDB', {
       entityType,
       tableName,
@@ -260,6 +280,7 @@ function createEntityService(entityType, providedTableName) {
       const params = {
         TableName: tableName,
         FilterExpression: `#entityType = :entityType AND #field IN (${valueTokens.join(', ')})`,
+        ConsistentRead: consistentRead,
         ExpressionAttributeNames: {
           '#entityType': 'entityType',
           '#field': field,
@@ -293,13 +314,14 @@ function createEntityService(entityType, providedTableName) {
     return collectedItems;
   }
 
-  async function listByFieldValue({ field, value }) {
+  async function listByFieldValue({ field, value, consistentRead = false }) {
     const collectedItems = [];
     let exclusiveStartKey;
     do {
       const response = await documentClient.send(new ScanCommand({
         TableName: tableName,
         FilterExpression: '#entityType = :entityType AND #field = :value',
+        ConsistentRead: consistentRead,
         ExpressionAttributeNames: { '#entityType': 'entityType', '#field': field },
         ExpressionAttributeValues: { ':entityType': entityType, ':value': value },
         ...(exclusiveStartKey ? { ExclusiveStartKey: exclusiveStartKey } : {}),
@@ -311,39 +333,7 @@ function createEntityService(entityType, providedTableName) {
   }
 
   async function close(id, ownerSub, reason) {
-    const item = await findById(id);
-    if (item.owner_sub !== ownerSub) {
-      const { ForbiddenError } = require('../utils/errors');
-      throw new ForbiddenError('Company does not own this vacancy');
-    }
-    const now = new Date().toISOString();
-    try {
-      const response = await documentClient.send(new UpdateCommand({
-        TableName: tableName,
-        Key: { [primaryKey]: item[primaryKey] },
-        UpdateExpression: 'SET #status = :closed, #closedAt = :closedAt, #updatedAt = :updatedAt'
-          + (reason ? ', #reason = :reason' : ''),
-        ConditionExpression: 'attribute_exists(#primaryKey) AND #id = :expectedId AND #owner = :owner '
-          + 'AND (attribute_not_exists(#status) OR #status <> :closed)',
-        ExpressionAttributeNames: {
-          '#primaryKey': primaryKey, '#id': 'id', '#owner': 'owner_sub', '#status': 'status',
-          '#closedAt': 'encerrada_em', '#updatedAt': 'updatedAt', ...(reason ? { '#reason': 'motivo_encerramento' } : {}),
-        },
-        ExpressionAttributeValues: {
-          ':expectedId': item.id, ':owner': ownerSub, ':closed': 'Encerrada', ':closedAt': now,
-          ':updatedAt': now, ...(reason ? { ':reason': reason } : {}),
-        },
-        ReturnValues: 'ALL_NEW',
-      }));
-      return response.Attributes;
-    } catch (error) {
-      if (error.name === 'ConditionalCheckFailedException') {
-        const conflict = new Error('Vacancy is already closed');
-        conflict.statusCode = 409;
-        throw conflict;
-      }
-      throw error;
-    }
+    return require('./jobLifecycleService').transition(id, ownerSub, 'close', { reason });
   }
 
 

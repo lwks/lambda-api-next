@@ -51,6 +51,27 @@ describe('entity service keys matching deployed DynamoDB tables', () => {
     expect(Object.values(command.input.ExpressionAttributeValues)).not.toContain('different');
   });
 
+  it('prevents an edit from racing a closure or being applied to a different cycle', async () => {
+    documentClient.send.mockResolvedValueOnce({ Item: { id: 'job-guid', guid_id: 'job-guid', entityType: 'job', status: 'Encerrada' } });
+    await expect(createEntityService('job', 'Vagas').update('job-guid', { titulo: 'Late edit' }, { expectedCycle: 1, ownerSub: 'company' }))
+      .rejects.toMatchObject({ statusCode: 409 });
+    expect(documentClient.send).toHaveBeenCalledTimes(1);
+    documentClient.send.mockReset().mockResolvedValue({ Item: { id: 'job-guid', guid_id: 'job-guid', entityType: 'job', status: 'Aberto', ciclo_atual: 2 } });
+    await expect(createEntityService('job', 'Vagas').update('job-guid', { titulo: 'Stale edit' }, { expectedCycle: 1, ownerSub: 'company' }))
+      .rejects.toMatchObject({ statusCode: 409 });
+    expect(documentClient.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('checks the company and open cycle again in the actual database update', async () => {
+    const existing = { id: 'job-guid', guid_id: 'job-guid', entityType: 'job', status: 'Aberto', owner_sub: 'company', ciclo_atual: 2 };
+    documentClient.send.mockResolvedValueOnce({ Item: existing }).mockResolvedValueOnce({ Attributes: existing });
+    await createEntityService('job', 'Vagas').update('job-guid', { titulo: 'Updated' }, { expectedCycle: 2, ownerSub: 'company' });
+    const { ConditionExpression, ExpressionAttributeValues } = documentClient.send.mock.calls[1][0].input;
+    expect(ConditionExpression).toContain('#status <> :closed');
+    expect(ConditionExpression).toContain('#cycle = :cycle');
+    expect(ExpressionAttributeValues).toMatchObject({ ':cycle': 2, ':owner': 'company' });
+  });
+
   it.each([
     ['company', 'Empresas', 'cd_cnpj'],
     ['user', 'Usuarios', 'cd_cpf'],

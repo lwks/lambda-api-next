@@ -827,15 +827,29 @@ const swaggerDefinition = {
         parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
         requestBody: {
           required: false,
-          content: { 'application/json': { schema: { type: 'object', properties: { motivo_encerramento: { type: 'string', maxLength: 1000 } } } } },
+          content: { 'application/json': { schema: { type: 'object', properties: { motivo_encerramento: { type: 'string', maxLength: 1000 }, ciclo: { type: 'integer', minimum: 1 } } } } },
         },
         responses: {
           200: { description: 'Vaga encerrada' },
           400: { $ref: '#/components/responses/ValidationError' },
           403: { description: 'Vaga não pertence à empresa autenticada' },
           404: { $ref: '#/components/responses/NotFound' },
-          409: { description: 'Vaga já encerrada' },
+          409: { description: 'O ciclo da vaga foi alterado por outra operação' },
         },
+      },
+    },
+    '/api/jobs/{id}/reopen': {
+      post: {
+        tags: ['Jobs'], summary: 'Reabre uma vaga da empresa e inicia um novo ciclo',
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+        requestBody: { required: true, content: { 'application/json': { schema: {
+          type: 'object', required: ['ciclo'], properties: { ciclo: { type: 'integer', minimum: 1 } },
+        } } } },
+        responses: { 200: { description: 'Vaga aberta no novo ciclo; repetição do mesmo pedido não cria outro ciclo' },
+          400: { $ref: '#/components/responses/ValidationError' },
+          403: { description: 'Vaga não pertence à empresa autenticada' },
+          404: { $ref: '#/components/responses/NotFound' },
+          409: { description: 'O estado ou o ciclo da vaga mudou' } },
       },
     },
   },

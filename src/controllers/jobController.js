@@ -6,6 +6,12 @@ const { decodeLastKey, encodeLastKey } = require('../utils/pagination');
 const { ValidationError } = require('../utils/errors');
 const { ForbiddenError } = require('../utils/errors');
 const { logger } = require('../utils/logger');
+const lifecycle = require('../services/jobLifecycleService');
+
+const protectedFields = ['owner_sub', 'status', 'ciclo_atual', 'encerrada_em', 'reaberta_em', 'motivo_encerramento'];
+function editableJob(body) {
+  return Object.fromEntries(Object.entries(body || {}).filter(([field]) => !protectedFields.includes(field)));
+}
 
 const jobService = createEntityService('job', TABLE_NAMES.job);
 
@@ -16,7 +22,7 @@ async function createJob(req, res, next) {
     validateRequiredFields(req.body, ['guid_id']);
     if (!req.auth?.sub) throw new ValidationError('Authenticated company identity missing');
     logger.info('Validation succeeded for job creation');
-    const job = await jobService.create({ ...req.body, owner_sub: req.auth.sub });
+    const job = await jobService.create({ ...editableJob(req.body), owner_sub: req.auth.sub, status: 'Aberto', ciclo_atual: 1 });
     logger.info('Job persisted in DynamoDB', { jobId: job.id });
     return created(res, job);
   } catch (error) {
@@ -55,7 +61,7 @@ async function listJobs(req, res, next) {
 async function listCompanyJobs(req, res, next) {
   try {
     if (!req.auth?.sub) throw new ForbiddenError('Authenticated company identity missing');
-    const items = await jobService.listByFieldValue({ field: 'owner_sub', value: req.auth.sub });
+    const items = await jobService.listByFieldValue({ field: 'owner_sub', value: req.auth.sub, consistentRead: true });
     return success(res, { items });
   } catch (error) {
     return next(error);
@@ -69,11 +75,20 @@ async function closeJob(req, res, next) {
     if (reason !== undefined && (typeof reason !== 'string' || reason.trim().length > 1000)) {
       throw new ValidationError('motivo_encerramento must be a string of at most 1000 characters');
     }
-    const job = await jobService.close(req.params.id, req.auth.sub, reason?.trim() || undefined);
+    const job = await lifecycle.transition(req.params.id, req.auth.sub, 'close', {
+      reason: reason?.trim() || undefined, expectedCycle: req.body?.ciclo,
+    });
     return success(res, job);
   } catch (error) {
     return next(error);
   }
+}
+
+async function reopenJob(req, res, next) {
+  try {
+    const job = await lifecycle.transition(req.params.id, req.auth?.sub, 'reopen', { expectedCycle: req.body?.ciclo });
+    return success(res, job);
+  } catch (error) { return next(error); }
 }
 
 async function getJob(req, res, next) {
@@ -92,17 +107,15 @@ async function getJob(req, res, next) {
 async function updateJob(req, res, next) {
   try {
     logger.info('Received request to update job', { params: req.params, requestId: req.authRequestId });
-    const updates = { ...req.body };
-    delete updates.owner_sub;
-    delete updates.status;
-    const existing = await jobService.findById(req.params.id);
+    const updates = editableJob(req.body);
+    const existing = await jobService.findById(req.params.id, { consistentRead: true });
     if (req.auth?.sub && existing.owner_sub !== req.auth.sub) throw new ForbiddenError('Company does not own this vacancy');
     if (existing.status === 'Encerrada') {
       const conflict = new Error('Closed vacancies cannot be changed');
       conflict.statusCode = 409;
       throw conflict;
     }
-    const job = await jobService.update(req.params.id, updates);
+    const job = await jobService.update(req.params.id, updates, { expectedCycle: lifecycle.cycleOf(existing), ownerSub: req.auth?.sub });
     logger.info('Job updated in DynamoDB', { jobId: job.id });
     return success(res, job);
   } catch (error) {
@@ -125,6 +138,7 @@ async function deleteJob(req, res, next) {
       conflict.statusCode = 409;
       throw conflict;
     }
+    if (lifecycle.cycleOf(existing) > 1) throw new ForbiddenError('Vagas com histórico de reabertura não podem ser excluídas.');
     await jobService.remove(req.params.id);
     logger.info('Job removed from DynamoDB', { jobId: req.params.id });
     return noContent(res);
@@ -139,6 +153,7 @@ module.exports = {
   listJobs,
   listCompanyJobs,
   closeJob,
+  reopenJob,
   getJob,
   updateJob,
   deleteJob,

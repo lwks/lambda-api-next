@@ -6,6 +6,7 @@ const { isLocalHarness } = require('../harness/config');
 const { ValidationError, ForbiddenError } = require('../utils/errors');
 const { createEntityService } = require('./entityServiceFactory');
 const cvStorage = require('./cvStorageService');
+const lifecycle = require('./jobLifecycleService');
 
 const PROFILE_TABLE = process.env.CANDIDATE_PROFILE_TABLE_NAME || 'candidato_perfil';
 const NAMESPACE = 'aabff8ea-7930-4f2d-86aa-18d6b5a99137';
@@ -30,7 +31,7 @@ function conflict(message) {
   return error;
 }
 
-function applicationId(sub, jobGuid) { return uuidv5(`${sub}:${jobGuid}`, NAMESPACE); }
+function applicationId(sub, jobGuid, cycle = 1) { return uuidv5(cycle === 1 ? `${sub}:${jobGuid}` : `${sub}:${jobGuid}:${cycle}`, NAMESPACE); }
 function needsLgpd(profile, now = Date.now()) {
   const acceptedAt = Date.parse(profile?.lgpdAcceptedAt || '');
   return !profile?.lgpdAccepted || !Number.isFinite(acceptedAt) || now - acceptedAt >= LGPD_PERIOD_MS;
@@ -109,32 +110,36 @@ async function saveProfile(sub, body) {
   return publicProfile(item);
 }
 
-async function ownApplication(sub, jobGuid) {
+async function ownApplication(sub, jobGuid, jobSnapshot) {
   if (!jobGuid || typeof jobGuid !== 'string') throw new ValidationError('guid_vaga is required');
   if (!sub) throw new ForbiddenError('Candidate identity missing');
-  const id = applicationId(sub, jobGuid);
+  const job = jobSnapshot || await jobs.findById(jobGuid, { consistentRead: true });
+  const id = applicationId(sub, jobGuid, lifecycle.cycleOf(job));
   const item = isLocalHarness()
     ? require('../harness/store').read().candidate.find(row => row.guid_id === id)
     : (await documentClient.send(new GetCommand({ TableName: TABLE_NAMES.candidate, Key: { guid_id: id }, ConsistentRead: true }))).Item;
-  return item?.candidate_sub === sub ? item : null;
+  return item?.candidate_sub === sub ? { guid_id: item.guid_id, ciclo: lifecycle.applicationCycle(item) } : null;
 }
 
 async function listOwnApplications(sub, status = 'open') {
   if (!sub) throw new ForbiddenError('Candidate identity missing');
   if (!['open', 'closed', 'all'].includes(status)) throw new ValidationError('status must be open, closed or all');
   const candidates = createEntityService('candidate', TABLE_NAMES.candidate);
-  const records = await candidates.listByFieldValue({ field: 'candidate_sub', value: sub });
+  const records = await candidates.listByFieldValue({ field: 'candidate_sub', value: sub, consistentRead: true });
   const jobByGuid = new Map();
   // Resolve each vacancy once and keep the response limited to the caller's history.
   for (const guid of new Set(records.map(record => record.guid_vaga))) {
-    try { jobByGuid.set(guid, await jobs.findById(guid)); }
+    try { jobByGuid.set(guid, await jobs.findById(guid, { consistentRead: true })); }
     catch (error) { if (error.statusCode !== 404) throw error; }
   }
-  const items = records.map(record => {
+  const described = await lifecycle.describeApplications(records, jobByGuid);
+  const items = described.map(record => {
     const job = jobByGuid.get(record.guid_vaga);
-    return { id: record.guid_id, jobGuid: record.guid_vaga, title: job?.titulo || 'Vaga indisponível',
-      company: job?.empresa || '', jobStatus: job?.status || null, status: record.status,
-      createdAt: record.createdAt, closedAt: job?.encerrada_em || null };
+    return { id: record.guid_id, jobGuid: record.guid_vaga, title: record.tituloVaga,
+      company: job?.empresa || '', jobStatus: record.candidaturaEncerrada ? 'Encerrada' : job?.status || null,
+      currentJobStatus: job?.status || null, status: record.etapa,
+      ciclo: record.ciclo, historico: record.historico, removidaDaSelecao: record.removidaDaSelecao,
+      createdAt: record.createdAt, closedAt: record.encerradaEm };
   }).filter(item => status === 'all' || (status === 'closed'
     ? item.jobStatus === 'Encerrada' : item.jobStatus !== 'Encerrada' && item.jobStatus !== null));
   items.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
@@ -151,13 +156,15 @@ async function createApplication(auth, body, { legacyCv = false } = {}) {
   if (typeof application.pretensaoSalarial !== 'string' || !application.pretensaoSalarial.trim()) throw new ValidationError('Salary expectation is required');
   if (typeof application.mensagemEmpresa !== 'string') throw new ValidationError('Company message is invalid');
   if (!['KEEP', 'REPLACE', 'REMOVE'].includes(application.cvAction)) throw new ValidationError('Invalid CV action');
-  const job = await jobs.findById(jobGuid);
+  const job = await jobs.findById(jobGuid, { consistentRead: true });
+  const cycle = lifecycle.cycleOf(job);
   if (job.status === 'Encerrada') throw conflict('Vacancy is closed');
+  if ((body.ciclo ?? 1) !== cycle) throw conflict('Vacancy cycle changed; reload and try again');
   const existing = await findProfile(sub);
   if (mode === 'USE_SAVED_PROFILE' && !existing) throw new ValidationError('Saved profile not found');
   if (existing && profileVersion !== existing.version) throw conflict('Profile version is outdated');
   if (!existing && profileVersion !== undefined) throw conflict('Profile does not exist');
-  if (await ownApplication(sub, jobGuid)) throw conflict('Application already exists for this vacancy');
+  if (await ownApplication(sub, jobGuid, job)) throw conflict('Application already exists for this vacancy');
   const now = new Date().toISOString();
   const renewLgpd = needsLgpd(existing);
   if (renewLgpd && application.lgpdAccepted !== true) throw new ValidationError('Accept the privacy terms again');
@@ -176,8 +183,8 @@ async function createApplication(auth, body, { legacyCv = false } = {}) {
   const nextProfile = { ...profileData, candidato_sub: sub, cv, version: (existing?.version || 0) + (profileChanges ? 1 : 0),
     lgpdAccepted: true, lgpdAcceptedAt: renewLgpd ? now : existing.lgpdAcceptedAt,
     createdAt: existing?.createdAt || now, updatedAt: profileChanges ? now : existing.updatedAt };
-  const id = applicationId(sub, jobGuid);
-  const record = { ...profileData, guid_id: id, id, guid_vaga: jobGuid, candidate_sub: sub,
+  const id = applicationId(sub, jobGuid, cycle);
+  const record = { ...profileData, guid_id: id, id, guid_vaga: jobGuid, ciclo: cycle, candidate_sub: sub,
     profile_version: nextProfile.version, mensagemEmpresa: application.mensagemEmpresa,
     pretensaoSalarial: application.pretensaoSalarial, compartilhamentoAccepted: true,
     lgpdAccepted: true, lgpdAcceptedAt: nextProfile.lgpdAcceptedAt,
@@ -188,6 +195,7 @@ async function createApplication(auth, body, { legacyCv = false } = {}) {
     const db = store.read(); db.profile ||= [];
     const currentJob = db.job.find(row => row.guid_id === jobGuid);
     if (!currentJob || currentJob.status === 'Encerrada') throw conflict('Vacancy is closed');
+    if (lifecycle.cycleOf(currentJob) !== cycle) throw conflict('Vacancy cycle changed; reload and try again');
     if (db.candidate.some(row => row.guid_id === id)) throw conflict('Application already exists for this vacancy');
     const current = db.profile.find(row => row.candidato_sub === sub);
     if ((current?.version || 0) !== (existing?.version || 0)) throw conflict('Profile version is outdated');
@@ -195,8 +203,7 @@ async function createApplication(auth, body, { legacyCv = false } = {}) {
     db.candidate.push(record); store.save(db);
   } else {
     const actions = [{ ConditionCheck: { TableName: TABLE_NAMES.job, Key: { guid_id: jobGuid },
-      ConditionExpression: 'attribute_exists(guid_id) AND (#status <> :closed OR attribute_not_exists(#status))',
-      ExpressionAttributeNames: { '#status': 'status' }, ExpressionAttributeValues: { ':closed': 'Encerrada' } } }];
+      ...lifecycle.cycleCondition(job, { open: true }) } }];
     if (profileChanges) actions.push({ Put: { TableName: PROFILE_TABLE, Item: nextProfile,
       ConditionExpression: existing ? '#version = :version' : 'attribute_not_exists(candidato_sub)',
       ...(existing ? { ExpressionAttributeNames: { '#version': 'version' }, ExpressionAttributeValues: { ':version': existing.version } } : {}) } });
